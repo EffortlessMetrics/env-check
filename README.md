@@ -1,0 +1,87 @@
+# env-check
+
+Machine-truth preflight for the cockpit ecosystem.
+
+env-check answers one question:
+
+> “Is this machine/CI runner set up to work with the repo’s declared tool requirements?”
+
+It is deliberately **not** a repo policy engine and **not** a build runner. It exists to keep
+repo-truth sensors deterministic by ejecting “what’s installed” checks into a dedicated,
+opt-in tool.
+
+## Where it fits
+
+- **Truth layer:** machine truth
+- **Lane:** onboarding / runner sanity (optional by default)
+- **Cockpit posture:** non-blocking unless the repo explicitly opts in via `cockpit.toml`
+
+## What it checks (v0.1)
+
+- Tool presence on PATH (or rustup-managed toolchains where applicable)
+- Version constraints (best-effort parsing; conservative comparison)
+- Optional local hash verification for repo-provided binaries (when a hash manifest exists)
+
+## Inputs (auto-discovered)
+
+env-check will attempt to read any of these if present:
+
+- `rust-toolchain.toml` / `rust-toolchain`
+- `.mise.toml`
+- `.tool-versions` (asdf)
+- `scripts/tools.sha256` (or other configured hash manifest)
+
+If none exist, env-check emits a **skip** receipt (it does not fail a random repo).
+
+## Outputs (artifacts)
+
+Canonical output paths:
+
+```
+artifacts/env-check/report.json    # required (receipt envelope)
+artifacts/env-check/comment.md     # optional (PR-friendly summary)
+artifacts/env-check/raw.log        # optional (probe transcript)
+```
+
+## Quickstart
+
+```bash
+# In CI (recommended): write artifacts into artifacts/env-check
+env-check check \
+  --root . \
+  --profile oss \
+  --out artifacts/env-check/report.json \
+  --md  artifacts/env-check/comment.md
+```
+
+Render-only (useful when the check ran elsewhere):
+
+```bash
+env-check md --report artifacts/env-check/report.json --out artifacts/env-check/comment.md
+```
+
+Explain codes:
+
+```bash
+env-check explain env.missing_tool
+```
+
+## Exit codes
+
+- `0` — ok (pass or warn unless warn-as-fail is enabled in local config)
+- `2` — policy fail (e.g., missing required tool under a strict profile)
+- `1` — tool/runtime error (I/O, parse error, internal failure)
+
+## Contract compatibility
+
+env-check emits `env-check.report.v1`, which is an instance of the shared receipt envelope.
+Tool-specific details live under `data` only.
+
+See:
+
+- `schemas/receipt.envelope.v1.json`
+- `schemas/env-check.report.v1.json`
+
+## License
+
+MIT (placeholder; adjust as needed).

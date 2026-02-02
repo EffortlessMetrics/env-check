@@ -1,0 +1,10 @@
+# cargo-mutants config (timeboxed in CI)
+
+[mutants]
+# Keep the scope tight for signal.
+exclude_globs = [
+  "crates/env-check-cli/**",
+  "crates/env-check-app/**",
+  "**/tests/**",
+  "fuzz/**",
+]

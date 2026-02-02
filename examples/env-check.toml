@@ -1,0 +1,13 @@
+# env-check.toml (example)
+
+profile = "oss"           # oss|team|strict
+fail_on = "error"         # error|warn|never
+
+# Optional: override default hash manifest locations (relative to repo root)
+hash_manifests = ["scripts/tools.sha256"]
+
+# Optional: ignore tools entirely (useful during migration)
+ignore_tools = ["java"]
+
+# Optional: treat these tools as required even if source marks them optional
+force_required = ["rustc", "cargo"]

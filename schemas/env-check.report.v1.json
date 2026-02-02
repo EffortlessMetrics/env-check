@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:effortless:env-check.report.v1",
+  "title": "env-check.report.v1",
+  "allOf": [
+    {
+      "$ref": "./receipt.envelope.v1.json"
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "env-check.report.v1"
+        },
+        "tool": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "const": "env-check"
+            }
+          }
+        },
+        "data": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "default": null,
+          "additionalProperties": false,
+          "properties": {
+            "sources_used": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": []
+            },
+            "requirements_total": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "requirements_failed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "profile": {
+              "type": "string",
+              "enum": [
+                "oss",
+                "team",
+                "strict"
+              ]
+            },
+            "fail_on": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warn",
+                "never"
+              ]
+            },
+            "probes": {
+              "type": "array",
+              "default": [],
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "tool",
+                  "result"
+                ],
+                "properties": {
+                  "tool": {
+                    "type": "string"
+                  },
+                  "cmd": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "result": {
+                    "type": "string",
+                    "enum": [
+                      "ok",
+                      "not_found",
+                      "version_mismatch",
+                      "hash_mismatch",
+                      "error",
+                      "skipped"
+                    ]
+                  },
+                  "raw": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "truncated": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        }
+      }
+    }
+  ]
+}

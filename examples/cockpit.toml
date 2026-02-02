@@ -1,0 +1,9 @@
+# cockpit.toml snippet (example)
+
+[sensors.env-check]
+blocking = false
+missing = "skip"
+
+# Once adopted:
+# blocking = true
+# missing = "warn"

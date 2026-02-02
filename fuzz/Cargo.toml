@@ -1,0 +1,29 @@
+[package]
+name = "env-check-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+env-check-sources = { path = "../crates/env-check-sources" }
+
+[dependencies.env-check-types]
+path = "../crates/env-check-types"
+
+[[bin]]
+name = "parse_tool_versions"
+path = "fuzz_targets/parse_tool_versions.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parse_mise_toml"
+path = "fuzz_targets/parse_mise_toml.rs"
+test = false
+doc = false
+bench = false
