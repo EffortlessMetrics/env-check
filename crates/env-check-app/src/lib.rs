@@ -11,7 +11,8 @@ use env_check_domain::DomainOutcome;
 use env_check_probe::{OsCommandRunner, OsPathResolver, Prober, Sha256Hasher};
 use env_check_sources::ParsedSources;
 use env_check_types::{
-    FailOn, PolicyConfig, Profile, ReceiptEnvelope, RunMeta, ToolMeta, TOOL_NAME, SCHEMA_ID,
+    CiMeta, FailOn, GitMeta, HostMeta, PolicyConfig, Profile, ReceiptEnvelope, RunMeta, ToolMeta,
+    SCHEMA_ID, TOOL_NAME,
 };
 
 use serde::Deserialize;
@@ -45,9 +46,11 @@ pub fn run_check(root: &Path, config_path: Option<&Path>, profile: Profile, fail
         cfg.hash_manifests.push("scripts/tools.sha256".into());
     }
 
+    let effective_profile = cfg.profile.clone().unwrap_or(profile);
+    let effective_fail_on = cfg.fail_on.clone().unwrap_or(fail_on);
     let policy = PolicyConfig {
-        profile: cfg.profile.unwrap_or(profile),
-        fail_on: cfg.fail_on.unwrap_or(fail_on),
+        profile: effective_profile,
+        fail_on: effective_fail_on,
         max_findings: Some(100),
     };
 
@@ -57,7 +60,7 @@ pub fn run_check(root: &Path, config_path: Option<&Path>, profile: Profile, fail
     let sources_used: Vec<String> = parsed.sources_used.iter().map(|s| s.path.clone()).collect();
 
     // Normalize requirements for determinism and policy overrides.
-    let mut requirements = normalize_requirements(parsed.requirements, &cfg);
+    let requirements = normalize_requirements(parsed.requirements.clone(), &cfg);
 
     // Probe.
     let prober = Prober::new(OsCommandRunner, OsPathResolver, Sha256Hasher)
@@ -94,9 +97,9 @@ pub fn run_check(root: &Path, config_path: Option<&Path>, profile: Profile, fail
             started_at: started,
             ended_at: Some(ended),
             duration_ms: Some(duration_ms),
-            host: None,
-            ci: None,
-            git: None,
+            host: detect_host(),
+            ci: detect_ci(),
+            git: detect_git(&root),
         },
         verdict: outcome.verdict.clone(),
         findings: outcome.findings.clone(),
@@ -175,4 +178,88 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     fs::write(&tmp, bytes).with_context(|| format!("write {}", tmp.display()))?;
     fs::rename(&tmp, path).with_context(|| format!("rename {} -> {}", tmp.display(), path.display()))?;
     Ok(())
+}
+
+/// Detect host metadata (OS, arch, hostname).
+fn detect_host() -> Option<HostMeta> {
+    Some(HostMeta {
+        os: std::env::consts::OS.to_string(),
+        arch: std::env::consts::ARCH.to_string(),
+        hostname: hostname::get().ok().and_then(|h| h.into_string().ok()),
+    })
+}
+
+/// Detect CI provider metadata via environment variables.
+fn detect_ci() -> Option<CiMeta> {
+    // GitHub Actions
+    if std::env::var("GITHUB_ACTIONS").is_ok() {
+        return Some(CiMeta {
+            provider: "github".to_string(),
+            job: std::env::var("GITHUB_JOB").ok(),
+            run_id: std::env::var("GITHUB_RUN_ID").ok(),
+        });
+    }
+    // GitLab CI
+    if std::env::var("GITLAB_CI").is_ok() {
+        return Some(CiMeta {
+            provider: "gitlab".to_string(),
+            job: std::env::var("CI_JOB_NAME").ok(),
+            run_id: std::env::var("CI_JOB_ID").ok(),
+        });
+    }
+    // CircleCI
+    if std::env::var("CIRCLECI").is_ok() {
+        return Some(CiMeta {
+            provider: "circleci".to_string(),
+            job: std::env::var("CIRCLE_JOB").ok(),
+            run_id: std::env::var("CIRCLE_BUILD_NUM").ok(),
+        });
+    }
+    // Azure Pipelines
+    if std::env::var("TF_BUILD").is_ok() {
+        return Some(CiMeta {
+            provider: "azure".to_string(),
+            job: std::env::var("SYSTEM_JOBDISPLAYNAME").ok(),
+            run_id: std::env::var("BUILD_BUILDID").ok(),
+        });
+    }
+    // Generic CI detection
+    if std::env::var("CI").is_ok() {
+        return Some(CiMeta {
+            provider: "unknown".to_string(),
+            job: None,
+            run_id: None,
+        });
+    }
+    None
+}
+
+/// Detect git repository metadata by shelling out to git.
+fn detect_git(root: &Path) -> Option<GitMeta> {
+    use std::process::Command;
+
+    fn git(root: &Path, args: &[&str]) -> Option<String> {
+        Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .filter(|s| !s.is_empty())
+    }
+
+    // Check if in a git repo
+    let _ = git(root, &["rev-parse", "--git-dir"])?;
+
+    Some(GitMeta {
+        repo: git(root, &["config", "--get", "remote.origin.url"]),
+        base_ref: std::env::var("GITHUB_BASE_REF")
+            .ok()
+            .or_else(|| std::env::var("CI_MERGE_REQUEST_TARGET_BRANCH_NAME").ok()),
+        head_ref: git(root, &["rev-parse", "--abbrev-ref", "HEAD"]),
+        base_sha: None, // Would need additional logic to compute
+        head_sha: git(root, &["rev-parse", "HEAD"]),
+        merge_base: None,
+    })
 }

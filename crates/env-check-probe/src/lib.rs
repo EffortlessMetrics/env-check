@@ -237,16 +237,353 @@ fn extract_version(re: &Regex, text: &str) -> Option<String> {
     re.find(text).map(|m| m.as_str().to_string())
 }
 
+/// Fake/test adapters for use in other crates' tests.
+pub mod fakes {
+    use super::*;
+    use std::collections::{HashMap, HashSet};
+
+    /// A fake PathResolver that returns a synthetic path for tools in its "present" set.
+    pub struct FakePathResolver {
+        present: HashSet<String>,
+    }
+
+    impl FakePathResolver {
+        pub fn new(tools: impl IntoIterator<Item = impl Into<String>>) -> Self {
+            Self {
+                present: tools.into_iter().map(|t| t.into()).collect(),
+            }
+        }
+    }
+
+    impl PathResolver for FakePathResolver {
+        fn resolve(&self, tool: &str) -> Option<PathBuf> {
+            if self.present.contains(tool) {
+                Some(PathBuf::from(format!("/fake/bin/{}", tool)))
+            } else {
+                None
+            }
+        }
+    }
+
+    /// A fake CommandRunner that returns pre-configured responses based on argv[0].
+    pub struct FakeCommandRunner {
+        responses: HashMap<String, CmdOutput>,
+    }
+
+    impl FakeCommandRunner {
+        pub fn new() -> Self {
+            Self {
+                responses: HashMap::new(),
+            }
+        }
+
+        pub fn with_response(mut self, cmd: impl Into<String>, output: CmdOutput) -> Self {
+            self.responses.insert(cmd.into(), output);
+            self
+        }
+    }
+
+    impl Default for FakeCommandRunner {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl CommandRunner for FakeCommandRunner {
+        fn run(&self, _cwd: &Path, argv: &[String]) -> Result<CmdOutput, EnvCheckError> {
+            if argv.is_empty() {
+                return Err(EnvCheckError::Runtime("empty argv".into()));
+            }
+            Ok(self
+                .responses
+                .get(&argv[0])
+                .cloned()
+                .unwrap_or(CmdOutput {
+                    exit: Some(127),
+                    stdout: String::new(),
+                    stderr: format!("command not found: {}", argv[0]),
+                }))
+        }
+    }
+
+    /// A fake Hasher that returns pre-configured hashes for specific paths.
+    pub struct FakeHasher {
+        hashes: HashMap<PathBuf, String>,
+    }
+
+    impl FakeHasher {
+        pub fn new() -> Self {
+            Self {
+                hashes: HashMap::new(),
+            }
+        }
+
+        pub fn with_hash(mut self, path: impl Into<PathBuf>, hex: impl Into<String>) -> Self {
+            self.hashes.insert(path.into(), hex.into());
+            self
+        }
+    }
+
+    impl Default for FakeHasher {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl Hasher for FakeHasher {
+        fn sha256_hex(&self, path: &Path) -> Result<String, EnvCheckError> {
+            self.hashes
+                .get(path)
+                .cloned()
+                .ok_or_else(|| EnvCheckError::Io(format!("file not found: {}", path.display())))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::fakes::*;
+    use env_check_types::{HashAlgo, HashSpec, ProbeKind, Requirement, SourceKind, SourceRef};
     use proptest::prelude::*;
+
+    fn make_req(tool: &str, probe_kind: ProbeKind) -> Requirement {
+        Requirement {
+            tool: tool.to_string(),
+            constraint: Some("1.0.0".to_string()),
+            required: true,
+            source: SourceRef {
+                kind: SourceKind::ToolVersions,
+                path: ".tool-versions".to_string(),
+            },
+            probe_kind,
+            hash: None,
+        }
+    }
+
+    fn make_hash_req(tool: &str, path: &str, hash: &str) -> Requirement {
+        Requirement {
+            tool: tool.to_string(),
+            constraint: None,
+            required: true,
+            source: SourceRef {
+                kind: SourceKind::HashManifest,
+                path: "tools.sha256".to_string(),
+            },
+            probe_kind: ProbeKind::FileHash,
+            hash: Some(HashSpec {
+                algo: HashAlgo::Sha256,
+                hex: hash.to_string(),
+                path: path.to_string(),
+            }),
+        }
+    }
 
     #[test]
     fn version_extraction_picks_first_numeric() {
         let re = Regex::new(r"(\d+)(?:\.(\d+))?(?:\.(\d+))?").unwrap();
         assert_eq!(extract_version(&re, "node v20.11.0 (foo)"), Some("20.11.0".into()));
         assert_eq!(extract_version(&re, "no digits here"), None);
+    }
+
+    #[test]
+    fn probe_path_tool_present() {
+        let path_resolver = FakePathResolver::new(["node"]);
+        let cmd_runner = FakeCommandRunner::new()
+            .with_response("node", CmdOutput {
+                exit: Some(0),
+                stdout: "v20.11.0".to_string(),
+                stderr: String::new(),
+            });
+        let hasher = FakeHasher::new();
+
+        let prober = Prober::new(cmd_runner, path_resolver, hasher).unwrap();
+        let req = make_req("node", ProbeKind::PathTool);
+        let obs = prober.probe(Path::new("/repo"), &req);
+
+        assert!(obs.present);
+        assert!(obs.version.is_some());
+        assert_eq!(obs.version.as_ref().unwrap().parsed, Some("20.11.0".to_string()));
+    }
+
+    #[test]
+    fn probe_path_tool_missing() {
+        let path_resolver = FakePathResolver::new(Vec::<String>::new());
+        let cmd_runner = FakeCommandRunner::new();
+        let hasher = FakeHasher::new();
+
+        let prober = Prober::new(cmd_runner, path_resolver, hasher).unwrap();
+        let req = make_req("node", ProbeKind::PathTool);
+        let obs = prober.probe(Path::new("/repo"), &req);
+
+        assert!(!obs.present);
+        assert!(obs.version.is_none());
+    }
+
+    #[test]
+    fn probe_extracts_version_from_stdout() {
+        let path_resolver = FakePathResolver::new(["node"]);
+        let cmd_runner = FakeCommandRunner::new()
+            .with_response("node", CmdOutput {
+                exit: Some(0),
+                stdout: "node v20.11.0 (LTS)".to_string(),
+                stderr: String::new(),
+            });
+        let hasher = FakeHasher::new();
+
+        let prober = Prober::new(cmd_runner, path_resolver, hasher).unwrap();
+        let req = make_req("node", ProbeKind::PathTool);
+        let obs = prober.probe(Path::new("/repo"), &req);
+
+        assert_eq!(obs.version.as_ref().unwrap().parsed, Some("20.11.0".to_string()));
+    }
+
+    #[test]
+    fn probe_extracts_version_from_stderr() {
+        // Some tools print version to stderr
+        let path_resolver = FakePathResolver::new(["java"]);
+        let cmd_runner = FakeCommandRunner::new()
+            .with_response("java", CmdOutput {
+                exit: Some(0),
+                stdout: String::new(),
+                stderr: "openjdk version \"17.0.1\" 2021-10-19".to_string(),
+            });
+        let hasher = FakeHasher::new();
+
+        let prober = Prober::new(cmd_runner, path_resolver, hasher).unwrap();
+        let req = make_req("java", ProbeKind::PathTool);
+        let obs = prober.probe(Path::new("/repo"), &req);
+
+        assert_eq!(obs.version.as_ref().unwrap().parsed, Some("17.0.1".to_string()));
+    }
+
+    #[test]
+    fn probe_rustup_toolchain_present() {
+        let path_resolver = FakePathResolver::new(["rustup"]);
+        let cmd_runner = FakeCommandRunner::new()
+            .with_response("rustup", CmdOutput {
+                exit: Some(0),
+                stdout: "stable-x86_64-unknown-linux-gnu (default)\n1.75.0-x86_64-unknown-linux-gnu\nnightly-x86_64-unknown-linux-gnu".to_string(),
+                stderr: String::new(),
+            });
+        let hasher = FakeHasher::new();
+
+        let prober = Prober::new(cmd_runner, path_resolver, hasher).unwrap();
+        let mut req = make_req("rust", ProbeKind::RustupToolchain);
+        req.constraint = Some("1.75.0".to_string());
+        let obs = prober.probe(Path::new("/repo"), &req);
+
+        assert!(obs.present);
+        assert!(obs.version.as_ref().unwrap().raw.contains("1.75.0"));
+    }
+
+    #[test]
+    fn probe_rustup_missing() {
+        let path_resolver = FakePathResolver::new(Vec::<String>::new());
+        let cmd_runner = FakeCommandRunner::new();
+        let hasher = FakeHasher::new();
+
+        let prober = Prober::new(cmd_runner, path_resolver, hasher).unwrap();
+        let req = make_req("rust", ProbeKind::RustupToolchain);
+        let obs = prober.probe(Path::new("/repo"), &req);
+
+        assert!(!obs.present);
+    }
+
+    #[test]
+    fn probe_file_hash_matches() {
+        use std::io::Write;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let scripts_dir = temp_dir.path().join("scripts");
+        std::fs::create_dir_all(&scripts_dir).unwrap();
+
+        let file_path = scripts_dir.join("tool.sh");
+        let mut file = std::fs::File::create(&file_path).unwrap();
+        file.write_all(b"#!/bin/bash\necho hello").unwrap();
+
+        // Calculate expected hash
+        let expected_hash = Sha256Hasher.sha256_hex(&file_path).unwrap();
+
+        let path_resolver = FakePathResolver::new(Vec::<String>::new());
+        let cmd_runner = FakeCommandRunner::new();
+        let hasher = Sha256Hasher;
+
+        let prober = Prober::new(cmd_runner, path_resolver, hasher).unwrap();
+        let req = make_hash_req("file:scripts/tool.sh", "scripts/tool.sh", &expected_hash);
+        let obs = prober.probe(temp_dir.path(), &req);
+
+        assert!(obs.present);
+        assert_eq!(obs.hash_ok, Some(true));
+    }
+
+    #[test]
+    fn probe_file_hash_mismatch() {
+        use std::io::Write;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let scripts_dir = temp_dir.path().join("scripts");
+        std::fs::create_dir_all(&scripts_dir).unwrap();
+
+        let file_path = scripts_dir.join("tool.sh");
+        let mut file = std::fs::File::create(&file_path).unwrap();
+        file.write_all(b"#!/bin/bash\necho hello").unwrap();
+
+        let path_resolver = FakePathResolver::new(Vec::<String>::new());
+        let cmd_runner = FakeCommandRunner::new();
+        let hasher = Sha256Hasher;
+
+        let prober = Prober::new(cmd_runner, path_resolver, hasher).unwrap();
+        // Use a wrong hash
+        let req = make_hash_req("file:scripts/tool.sh", "scripts/tool.sh", "0000000000000000000000000000000000000000000000000000000000000000");
+        let obs = prober.probe(temp_dir.path(), &req);
+
+        assert!(obs.present);
+        assert_eq!(obs.hash_ok, Some(false));
+    }
+
+    #[test]
+    fn probe_file_hash_case_insensitive() {
+        use std::io::Write;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let scripts_dir = temp_dir.path().join("scripts");
+        std::fs::create_dir_all(&scripts_dir).unwrap();
+
+        let file_path = scripts_dir.join("tool.sh");
+        let mut file = std::fs::File::create(&file_path).unwrap();
+        file.write_all(b"#!/bin/bash\necho hello").unwrap();
+
+        // Calculate expected hash and convert to uppercase
+        let expected_hash = Sha256Hasher.sha256_hex(&file_path).unwrap();
+        let uppercase_hash = expected_hash.to_uppercase();
+
+        let path_resolver = FakePathResolver::new(Vec::<String>::new());
+        let cmd_runner = FakeCommandRunner::new();
+        let hasher = Sha256Hasher;
+
+        let prober = Prober::new(cmd_runner, path_resolver, hasher).unwrap();
+        // Use uppercase hash in requirement, hasher returns lowercase
+        let req = make_hash_req("file:scripts/tool.sh", "scripts/tool.sh", &uppercase_hash);
+        let obs = prober.probe(temp_dir.path(), &req);
+
+        assert_eq!(obs.hash_ok, Some(true));
+    }
+
+    #[test]
+    fn probe_file_hash_file_missing() {
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        let path_resolver = FakePathResolver::new(Vec::<String>::new());
+        let cmd_runner = FakeCommandRunner::new();
+        let hasher = Sha256Hasher;
+
+        let prober = Prober::new(cmd_runner, path_resolver, hasher).unwrap();
+        let req = make_hash_req("file:scripts/tool.sh", "scripts/tool.sh", "abc123");
+        let obs = prober.probe(temp_dir.path(), &req);
+
+        assert!(!obs.present);
+        assert_eq!(obs.hash_ok, Some(false));
     }
 
     proptest! {

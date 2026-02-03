@@ -1,0 +1,24 @@
+---
+source: crates/env-check-render/tests/render.rs
+expression: md
+---
+## env-check: FAIL
+
+- Findings: 4 error, 2 warn, 0 info
+- Profile: `strict`
+- fail_on: `error`
+- Sources: `rust-toolchain.toml`, `.tool-versions`, `.hashes.json`
+
+### Findings
+
+- **error** `env.missing_tool` (rust-toolchain.toml) — Tool 'rustc' not found in PATH
+  - Install Rust via rustup
+- **error** `env.source_parse_error` (.tool-versions) — Failed to parse .tool-versions: invalid syntax at line 3
+  - Check file syntax
+- **error** `env.toolchain_missing` (rust-toolchain.toml) — Rust toolchain 1.75.0 not installed
+  - Run: rustup toolchain install 1.75.0
+- **error** `tool.runtime_error` — Command 'node --version' failed with exit code 1
+- **warn** `env.hash_mismatch` (.hashes.json) — SHA256 hash mismatch for .env.example
+  - Regenerate the file or update the hash manifest
+- **warn** `env.version_mismatch` (.tool-versions) — node: expected 20.10.0, found 18.17.1
+  - Run: asdf install nodejs 20.10.0

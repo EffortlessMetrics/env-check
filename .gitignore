@@ -1,7 +1,21 @@
+# Build artifacts
 /target
+fuzz/target/
 **/*.rs.bk
+
+# Lock files (library crate)
+Cargo.lock
+fuzz/Cargo.lock
+
+# IDE/Editor
 .DS_Store
 .env
 .idea/
 .vscode/
+
+# Test/Tool outputs
 artifacts/
+temp/
+temptest-report.json
+mutants.out*/
+xtask/fixtures/

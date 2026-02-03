@@ -191,7 +191,10 @@ pub fn parse_mise_toml_str(root: &Path, path: &Path, text: &str) -> anyhow::Resu
 /// `rust-toolchain.toml` or legacy `rust-toolchain` file.
 pub fn parse_rust_toolchain(root: &Path, path: &Path) -> anyhow::Result<Vec<Requirement>> {
     let text = fs::read_to_string(path).with_context(|| "read rust toolchain")?;
+    parse_rust_toolchain_str(root, path, &text)
+}
 
+pub fn parse_rust_toolchain_str(root: &Path, path: &Path, text: &str) -> anyhow::Result<Vec<Requirement>> {
     if path.file_name().and_then(|n| n.to_str()) == Some("rust-toolchain") && !text.trim_start().starts_with('[') {
         // Legacy format: single string channel/version.
         let channel = text.trim().to_string();
@@ -208,7 +211,7 @@ pub fn parse_rust_toolchain(root: &Path, path: &Path) -> anyhow::Result<Vec<Requ
         }]);
     }
 
-    let value: toml::Value = toml::from_str(&text).with_context(|| "parse rust-toolchain.toml")?;
+    let value: toml::Value = toml::from_str(text).with_context(|| "parse rust-toolchain.toml")?;
     let toolchain = value
         .get("toolchain")
         .ok_or_else(|| anyhow::anyhow!("missing [toolchain] table"))?;
@@ -234,6 +237,10 @@ pub fn parse_rust_toolchain(root: &Path, path: &Path) -> anyhow::Result<Vec<Requ
 /// Hash manifest format: `<sha256>  <path>`
 pub fn parse_hash_manifest(root: &Path, path: &Path) -> anyhow::Result<Vec<Requirement>> {
     let text = fs::read_to_string(path).with_context(|| "read hash manifest")?;
+    parse_hash_manifest_str(root, path, &text)
+}
+
+pub fn parse_hash_manifest_str(root: &Path, path: &Path, text: &str) -> anyhow::Result<Vec<Requirement>> {
     let mut out = vec![];
 
     for (idx, line) in text.lines().enumerate() {

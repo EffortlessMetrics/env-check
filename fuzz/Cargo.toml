@@ -7,6 +7,9 @@ edition = "2021"
 [package.metadata]
 cargo-fuzz = true
 
+# Keep fuzz as standalone workspace separate from parent
+[workspace]
+
 [dependencies]
 libfuzzer-sys = "0.4"
 env-check-sources = { path = "../crates/env-check-sources" }
@@ -24,6 +27,20 @@ bench = false
 [[bin]]
 name = "parse_mise_toml"
 path = "fuzz_targets/parse_mise_toml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parse_rust_toolchain"
+path = "fuzz_targets/parse_rust_toolchain.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parse_hash_manifest"
+path = "fuzz_targets/parse_hash_manifest.rs"
 test = false
 doc = false
 bench = false

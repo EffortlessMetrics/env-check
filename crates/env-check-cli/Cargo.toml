@@ -24,6 +24,8 @@ predicates.workspace = true
 cucumber.workspace = true
 tokio.workspace = true
 tempfile.workspace = true
+serde_json.workspace = true
+jsonschema.workspace = true
 
 [[test]]
 name = "bdd"

@@ -1,0 +1,15 @@
+---
+source: crates/env-check-render/tests/render.rs
+expression: md
+---
+## env-check: FAIL
+
+- Findings: 1 error, 0 warn, 0 info
+- Profile: `team`
+- fail_on: `error`
+- Sources: `.mise.toml`
+
+### Findings
+
+- **error** `env.missing_tool` (.mise.toml) — python is not installed
+  - Install python via mise or pyenv

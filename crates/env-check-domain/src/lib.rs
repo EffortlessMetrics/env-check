@@ -332,13 +332,24 @@ fn compute_status(counts: &Counts, fail_on: &FailOn, no_sources: bool) -> Verdic
 #[cfg(test)]
 mod tests {
     use super::*;
-    use env_check_types::{ProbeKind, Requirement, SourceKind, SourceRef, Observation, ProbeRecord};
+    use env_check_types::{FailOn, ProbeKind, Profile, Requirement, SourceKind, SourceRef, Observation, ProbeRecord};
 
     fn req(tool: &str, constraint: Option<&str>) -> Requirement {
         Requirement {
             tool: tool.to_string(),
             constraint: constraint.map(|s| s.to_string()),
             required: true,
+            source: SourceRef { kind: SourceKind::ToolVersions, path: ".tool-versions".into() },
+            probe_kind: ProbeKind::PathTool,
+            hash: None,
+        }
+    }
+
+    fn req_optional(tool: &str, constraint: Option<&str>) -> Requirement {
+        Requirement {
+            tool: tool.to_string(),
+            constraint: constraint.map(|s| s.to_string()),
+            required: false,
             source: SourceRef { kind: SourceKind::ToolVersions, path: ".tool-versions".into() },
             probe_kind: ProbeKind::PathTool,
             hash: None,
@@ -355,6 +366,18 @@ mod tests {
         }
     }
 
+    fn obs_missing(tool: &str) -> Observation {
+        Observation {
+            tool: tool.to_string(),
+            present: false,
+            version: None,
+            hash_ok: None,
+            probe: ProbeRecord { cmd: vec![], exit: None, stdout: "".into(), stderr: "".into() },
+        }
+    }
+
+    // ==================== Presence checks by profile ====================
+
     #[test]
     fn mismatch_is_warn_in_oss() {
         let policy = PolicyConfig::default();
@@ -363,5 +386,459 @@ mod tests {
         let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
         assert_eq!(out.verdict.status, VerdictStatus::Warn);
         assert_eq!(out.verdict.counts.warn, 1);
+    }
+
+    #[test]
+    fn missing_tool_is_warn_in_oss() {
+        let policy = PolicyConfig { profile: Profile::Oss, fail_on: FailOn::Error, max_findings: Some(100) };
+        let reqs = vec![req("node", Some("20"))];
+        let obs = vec![obs_missing("node")];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.verdict.status, VerdictStatus::Warn);
+        assert_eq!(out.verdict.counts.warn, 1);
+    }
+
+    #[test]
+    fn missing_tool_is_error_in_team() {
+        let policy = PolicyConfig { profile: Profile::Team, fail_on: FailOn::Error, max_findings: Some(100) };
+        let reqs = vec![req("node", Some("20"))];
+        let obs = vec![obs_missing("node")];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.verdict.status, VerdictStatus::Fail);
+        assert_eq!(out.verdict.counts.error, 1);
+    }
+
+    #[test]
+    fn missing_tool_is_error_in_strict() {
+        let policy = PolicyConfig { profile: Profile::Strict, fail_on: FailOn::Error, max_findings: Some(100) };
+        let reqs = vec![req("node", Some("20"))];
+        let obs = vec![obs_missing("node")];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.verdict.status, VerdictStatus::Fail);
+        assert_eq!(out.verdict.counts.error, 1);
+    }
+
+    #[test]
+    fn missing_optional_tool_is_info_in_oss() {
+        let policy = PolicyConfig { profile: Profile::Oss, fail_on: FailOn::Error, max_findings: Some(100) };
+        let reqs = vec![req_optional("node", Some("20"))];
+        let obs = vec![obs_missing("node")];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.verdict.status, VerdictStatus::Pass);
+        assert_eq!(out.verdict.counts.info, 1);
+    }
+
+    #[test]
+    fn missing_optional_tool_is_warn_in_team() {
+        let policy = PolicyConfig { profile: Profile::Team, fail_on: FailOn::Error, max_findings: Some(100) };
+        let reqs = vec![req_optional("node", Some("20"))];
+        let obs = vec![obs_missing("node")];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.verdict.status, VerdictStatus::Warn);
+        assert_eq!(out.verdict.counts.warn, 1);
+    }
+
+    // ==================== Version matching ====================
+
+    #[test]
+    fn exact_version_match_passes() {
+        let policy = PolicyConfig::default();
+        let reqs = vec![req("node", Some("20.11.0"))];
+        let obs = vec![obs("node", true, Some("20.11.0"))];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.verdict.status, VerdictStatus::Pass);
+        assert_eq!(out.findings.len(), 0);
+    }
+
+    #[test]
+    fn semver_range_satisfied() {
+        let policy = PolicyConfig::default();
+        let reqs = vec![req("node", Some(">=20"))];
+        let obs = vec![obs("node", true, Some("20.11.0"))];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.verdict.status, VerdictStatus::Pass);
+        assert_eq!(out.findings.len(), 0);
+    }
+
+    #[test]
+    fn semver_range_not_satisfied() {
+        let policy = PolicyConfig::default();
+        let reqs = vec![req("node", Some(">=20"))];
+        let obs = vec![obs("node", true, Some("18.0.0"))];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.verdict.status, VerdictStatus::Warn);
+        assert_eq!(out.findings.len(), 1);
+        assert!(out.findings[0].message.contains("Version mismatch"));
+    }
+
+    #[test]
+    fn major_version_constraint_satisfied() {
+        let policy = PolicyConfig::default();
+        let reqs = vec![req("node", Some("^20"))];
+        let obs = vec![obs("node", true, Some("20.5.0"))];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.verdict.status, VerdictStatus::Pass);
+    }
+
+    #[test]
+    fn tilde_version_constraint_satisfied() {
+        let policy = PolicyConfig::default();
+        let reqs = vec![req("node", Some("~20.11"))];
+        let obs = vec![obs("node", true, Some("20.11.5"))];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.verdict.status, VerdictStatus::Pass);
+    }
+
+    #[test]
+    fn version_mismatch_is_error_in_strict() {
+        let policy = PolicyConfig { profile: Profile::Strict, fail_on: FailOn::Error, max_findings: Some(100) };
+        let reqs = vec![req("node", Some(">=20"))];
+        let obs = vec![obs("node", true, Some("18.0.0"))];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.verdict.status, VerdictStatus::Fail);
+        assert_eq!(out.verdict.counts.error, 1);
+    }
+
+    #[test]
+    fn presence_only_constraint_latest_passes() {
+        let policy = PolicyConfig::default();
+        let reqs = vec![req("node", Some("latest"))];
+        let obs = vec![obs("node", true, Some("18.0.0"))];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.verdict.status, VerdictStatus::Pass);
+        assert_eq!(out.findings.len(), 0);
+    }
+
+    #[test]
+    fn presence_only_constraint_system_passes() {
+        let policy = PolicyConfig::default();
+        let reqs = vec![req("node", Some("system"))];
+        let obs = vec![obs("node", true, Some("18.0.0"))];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.verdict.status, VerdictStatus::Pass);
+    }
+
+    #[test]
+    fn presence_only_constraint_star_passes() {
+        let policy = PolicyConfig::default();
+        let reqs = vec![req("node", Some("*"))];
+        let obs = vec![obs("node", true, Some("18.0.0"))];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.verdict.status, VerdictStatus::Pass);
+    }
+
+    #[test]
+    fn no_constraint_passes_when_present() {
+        let policy = PolicyConfig::default();
+        let reqs = vec![req("node", None)];
+        let obs = vec![obs("node", true, Some("18.0.0"))];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.verdict.status, VerdictStatus::Pass);
+        assert_eq!(out.findings.len(), 0);
+    }
+
+    // ==================== No sources => skip ====================
+
+    #[test]
+    fn no_sources_yields_skip() {
+        let policy = PolicyConfig::default();
+        let out = evaluate(&[], &[], &policy, &vec![]);
+        assert_eq!(out.verdict.status, VerdictStatus::Skip);
+    }
+
+    #[test]
+    fn no_sources_but_requirements_still_skips() {
+        // Even if there are requirements, empty sources means skip
+        let policy = PolicyConfig::default();
+        let reqs = vec![req("node", Some("20"))];
+        let obs = vec![obs("node", true, Some("20.0.0"))];
+        let out = evaluate(&reqs, &obs, &policy, &vec![]);
+        assert_eq!(out.verdict.status, VerdictStatus::Skip);
+    }
+
+    // ==================== Verdict computation with fail_on ====================
+
+    #[test]
+    fn fail_on_warn_triggers_fail() {
+        let policy = PolicyConfig { profile: Profile::Oss, fail_on: FailOn::Warn, max_findings: Some(100) };
+        let reqs = vec![req("node", Some(">=20"))];
+        let obs = vec![obs("node", true, Some("18.0.0"))];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        // Oss profile gives warn for mismatch, fail_on=Warn escalates to fail
+        assert_eq!(out.verdict.status, VerdictStatus::Fail);
+    }
+
+    #[test]
+    fn fail_on_warn_passes_without_warnings() {
+        let policy = PolicyConfig { profile: Profile::Oss, fail_on: FailOn::Warn, max_findings: Some(100) };
+        let reqs = vec![req("node", Some(">=20"))];
+        let obs = vec![obs("node", true, Some("20.0.0"))];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.verdict.status, VerdictStatus::Pass);
+    }
+
+    #[test]
+    fn fail_on_never_never_fails_with_errors() {
+        let policy = PolicyConfig { profile: Profile::Team, fail_on: FailOn::Never, max_findings: Some(100) };
+        let reqs = vec![req("node", Some("20"))];
+        let obs = vec![obs_missing("node")];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        // Team profile gives error for missing, but fail_on=Never downgrades
+        assert_eq!(out.verdict.status, VerdictStatus::Warn);
+    }
+
+    #[test]
+    fn fail_on_never_keeps_warn_status() {
+        let policy = PolicyConfig { profile: Profile::Oss, fail_on: FailOn::Never, max_findings: Some(100) };
+        let reqs = vec![req("node", Some(">=20"))];
+        let obs = vec![obs("node", true, Some("18.0.0"))];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        // Oss profile gives warn for mismatch, fail_on=Never keeps as warn
+        assert_eq!(out.verdict.status, VerdictStatus::Warn);
+    }
+
+    #[test]
+    fn fail_on_error_with_only_warnings_is_warn() {
+        let policy = PolicyConfig { profile: Profile::Oss, fail_on: FailOn::Error, max_findings: Some(100) };
+        let reqs = vec![req("node", Some(">=20"))];
+        let obs = vec![obs("node", true, Some("18.0.0"))];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.verdict.status, VerdictStatus::Warn);
+    }
+
+    #[test]
+    fn fail_on_error_with_errors_fails() {
+        let policy = PolicyConfig { profile: Profile::Team, fail_on: FailOn::Error, max_findings: Some(100) };
+        let reqs = vec![req("node", Some("20"))];
+        let obs = vec![obs_missing("node")];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.verdict.status, VerdictStatus::Fail);
+    }
+
+    // ==================== Truncation ====================
+
+    #[test]
+    fn truncation_caps_findings() {
+        let policy = PolicyConfig { profile: Profile::Oss, fail_on: FailOn::Error, max_findings: Some(2) };
+        let reqs = vec![
+            req("a", Some("1")), req("b", Some("1")), req("c", Some("1")),
+        ];
+        let obs = vec![
+            obs_missing("a"), obs_missing("b"), obs_missing("c"),
+        ];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.findings.len(), 2);
+        assert!(out.truncated);
+        assert!(out.verdict.reasons.contains(&"truncated".to_string()));
+    }
+
+    #[test]
+    fn no_truncation_when_under_limit() {
+        let policy = PolicyConfig { profile: Profile::Oss, fail_on: FailOn::Error, max_findings: Some(10) };
+        let reqs = vec![req("a", Some("1")), req("b", Some("1"))];
+        let obs = vec![obs_missing("a"), obs_missing("b")];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.findings.len(), 2);
+        assert!(!out.truncated);
+        assert!(!out.verdict.reasons.contains(&"truncated".to_string()));
+    }
+
+    #[test]
+    fn no_truncation_when_exactly_at_limit() {
+        let policy = PolicyConfig { profile: Profile::Oss, fail_on: FailOn::Error, max_findings: Some(2) };
+        let reqs = vec![req("a", Some("1")), req("b", Some("1"))];
+        let obs = vec![obs_missing("a"), obs_missing("b")];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.findings.len(), 2);
+        assert!(!out.truncated);
+    }
+
+    #[test]
+    fn unlimited_findings_when_max_is_none() {
+        let policy = PolicyConfig { profile: Profile::Oss, fail_on: FailOn::Error, max_findings: None };
+        let reqs = vec![
+            req("a", Some("1")), req("b", Some("1")), req("c", Some("1")),
+            req("d", Some("1")), req("e", Some("1")),
+        ];
+        let obs = vec![
+            obs_missing("a"), obs_missing("b"), obs_missing("c"),
+            obs_missing("d"), obs_missing("e"),
+        ];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.findings.len(), 5);
+        assert!(!out.truncated);
+    }
+
+    // ==================== Reasons tracking ====================
+
+    #[test]
+    fn reasons_include_missing_tool() {
+        let policy = PolicyConfig::default();
+        let reqs = vec![req("node", Some("20"))];
+        let obs = vec![obs_missing("node")];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert!(out.verdict.reasons.contains(&"missing_tool".to_string()));
+    }
+
+    #[test]
+    fn reasons_include_version_mismatch() {
+        let policy = PolicyConfig::default();
+        let reqs = vec![req("node", Some(">=20"))];
+        let obs = vec![obs("node", true, Some("18.0.0"))];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert!(out.verdict.reasons.contains(&"version_mismatch".to_string()));
+    }
+
+    #[test]
+    fn reasons_are_deduplicated() {
+        let policy = PolicyConfig::default();
+        let reqs = vec![req("node", Some("20")), req("npm", Some("10"))];
+        let obs = vec![obs_missing("node"), obs_missing("npm")];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        let missing_count = out.verdict.reasons.iter().filter(|r| *r == "missing_tool").count();
+        assert_eq!(missing_count, 1);
+    }
+
+    // ==================== Requirements counts ====================
+
+    #[test]
+    fn requirements_total_is_tracked() {
+        let policy = PolicyConfig::default();
+        let reqs = vec![req("node", Some("20")), req("npm", Some("10")), req("go", Some("1.21"))];
+        let obs = vec![
+            obs("node", true, Some("20.0.0")),
+            obs("npm", true, Some("10.0.0")),
+            obs("go", true, Some("1.21.0")),
+        ];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.requirements_total, 3);
+    }
+
+    #[test]
+    fn requirements_failed_counts_errors() {
+        let policy = PolicyConfig { profile: Profile::Team, fail_on: FailOn::Error, max_findings: Some(100) };
+        let reqs = vec![req("node", Some("20")), req("npm", Some("10")), req("go", Some("1.21"))];
+        let obs = vec![
+            obs_missing("node"),
+            obs("npm", true, Some("10.0.0")),
+            obs_missing("go"),
+        ];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.requirements_total, 3);
+        assert_eq!(out.requirements_failed, 2);
+    }
+
+    // ==================== Sorting ====================
+
+    #[test]
+    fn findings_are_sorted_deterministically() {
+        let policy = PolicyConfig { profile: Profile::Team, fail_on: FailOn::Error, max_findings: Some(100) };
+        let reqs = vec![
+            req_optional("opt", Some("1")),  // will be warn
+            req("required", Some("1")),       // will be error
+        ];
+        let obs = vec![
+            obs_missing("opt"),
+            obs_missing("required"),
+        ];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        // Findings are sorted by severity rank ascending (Info=1, Warn=2, Error=3), then by path, check_id, code, message
+        // So Warn (rank 2) comes before Error (rank 3)
+        assert_eq!(out.findings[0].severity, Severity::Warn);
+        assert_eq!(out.findings[1].severity, Severity::Error);
+    }
+
+    #[test]
+    fn findings_sorted_by_path_within_same_severity() {
+        let policy = PolicyConfig { profile: Profile::Oss, fail_on: FailOn::Error, max_findings: Some(100) };
+        let reqs = vec![
+            Requirement {
+                tool: "z_tool".to_string(),
+                constraint: Some("1".to_string()),
+                required: true,
+                source: SourceRef { kind: SourceKind::ToolVersions, path: "a_path".into() },
+                probe_kind: ProbeKind::PathTool,
+                hash: None,
+            },
+            Requirement {
+                tool: "a_tool".to_string(),
+                constraint: Some("1".to_string()),
+                required: true,
+                source: SourceRef { kind: SourceKind::ToolVersions, path: "z_path".into() },
+                probe_kind: ProbeKind::PathTool,
+                hash: None,
+            },
+        ];
+        let obs = vec![obs_missing("z_tool"), obs_missing("a_tool")];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        // Both are warn, sorted by path: a_path should come before z_path
+        assert!(out.findings[0].location.as_ref().unwrap().path < out.findings[1].location.as_ref().unwrap().path);
+    }
+
+    // ==================== Multiple tools ====================
+
+    #[test]
+    fn multiple_tools_all_pass() {
+        let policy = PolicyConfig::default();
+        let reqs = vec![
+            req("node", Some("20")),
+            req("npm", Some("10")),
+            req("go", Some("1.21")),
+        ];
+        let obs = vec![
+            obs("node", true, Some("20.0.0")),
+            obs("npm", true, Some("10.0.0")),
+            obs("go", true, Some("1.21.0")),
+        ];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.verdict.status, VerdictStatus::Pass);
+        assert_eq!(out.findings.len(), 0);
+    }
+
+    #[test]
+    fn mixed_pass_warn_fail() {
+        let policy = PolicyConfig { profile: Profile::Team, fail_on: FailOn::Error, max_findings: Some(100) };
+        let reqs = vec![
+            req("node", Some("20")),           // will pass
+            req("npm", Some(">=10")),          // will fail version
+            req("go", Some("1.21")),           // will be missing
+        ];
+        let obs = vec![
+            obs("node", true, Some("20.0.0")),
+            obs("npm", true, Some("9.0.0")),
+            obs_missing("go"),
+        ];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.verdict.status, VerdictStatus::Fail);
+        assert_eq!(out.verdict.counts.error, 2);  // version mismatch + missing
+    }
+
+    // ==================== Edge cases ====================
+
+    #[test]
+    fn empty_requirements_with_sources_passes() {
+        let policy = PolicyConfig::default();
+        let out = evaluate(&[], &[], &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.verdict.status, VerdictStatus::Pass);
+    }
+
+    #[test]
+    fn coerce_version_handles_single_number() {
+        // Version "20" should be coerced to "20.0.0"
+        let policy = PolicyConfig::default();
+        let reqs = vec![req("node", Some(">=20"))];
+        let obs = vec![obs("node", true, Some("21"))];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.verdict.status, VerdictStatus::Pass);
+    }
+
+    #[test]
+    fn coerce_version_handles_two_numbers() {
+        // Version "20.11" should be coerced to "20.11.0"
+        let policy = PolicyConfig::default();
+        let reqs = vec![req("node", Some(">=20.10"))];
+        let obs = vec![obs("node", true, Some("20.11"))];
+        let out = evaluate(&reqs, &obs, &policy, &vec![".tool-versions".into()]);
+        assert_eq!(out.verdict.status, VerdictStatus::Pass);
     }
 }

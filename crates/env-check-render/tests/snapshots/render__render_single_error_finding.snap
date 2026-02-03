@@ -1,0 +1,15 @@
+---
+source: crates/env-check-render/tests/render.rs
+expression: md
+---
+## env-check: FAIL
+
+- Findings: 1 error, 0 warn, 0 info
+- Profile: `strict`
+- fail_on: `error`
+- Sources: `rust-toolchain.toml`
+
+### Findings
+
+- **error** `env.missing_tool` (rust-toolchain.toml) — rust toolchain 1.75.0 is not installed
+  - Run `rustup toolchain install 1.75.0`
