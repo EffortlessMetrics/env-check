@@ -37,3 +37,40 @@ These are stable external identifiers. Treat changes as breaking.
 - `tool.runtime_error` (shared)
 
 Each emitted code must have an `env-check explain` entry.
+
+## Source kinds
+
+Supported source file types (defined in `env-check-types::SourceKind`):
+
+| SourceKind | File(s) | Description |
+|------------|---------|-------------|
+| `ToolVersions` | `.tool-versions` | asdf version manager |
+| `MiseToml` | `.mise.toml` | mise version manager |
+| `RustToolchain` | `rust-toolchain.toml`, `rust-toolchain` | Rust toolchain |
+| `NodeVersion` | `.node-version` | Node.js version |
+| `Nvmrc` | `.nvmrc` | nvm version |
+| `PackageJson` | `package.json` | npm/Node.js engines |
+| `PythonVersion` | `.python-version` | pyenv version |
+| `PyprojectToml` | `pyproject.toml` | Python project |
+| `GoMod` | `go.mod` | Go module |
+| `HashManifest` | `scripts/tools.sha256` | Binary hashes |
+
+## Probe kinds
+
+How requirements are verified (defined in `env-check-types::ProbeKind`):
+
+| ProbeKind | Description |
+|-----------|-------------|
+| `PathTool` | Check PATH presence and run `<tool> --version` |
+| `RustupToolchain` | Check `rustup toolchain list` for installed toolchain |
+| `FileHash` | Compute SHA256 of local file and compare |
+
+## Profiles
+
+Policy profiles that map findings to severities:
+
+| Profile | Missing required | Missing optional | Version mismatch |
+|---------|-----------------|------------------|------------------|
+| `oss` | Warn | Info | Warn |
+| `team` | Error | Warn | Error (required) / Warn (optional) |
+| `strict` | Error | Error | Error |

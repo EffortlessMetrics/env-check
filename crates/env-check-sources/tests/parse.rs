@@ -1,8 +1,11 @@
 use std::path::Path;
 
 use env_check_sources::{
-    parse_all, parse_hash_manifest, parse_mise_toml, parse_mise_toml_str, parse_rust_toolchain,
-    parse_tool_versions, parse_tool_versions_str,
+    parse_all, parse_go_mod, parse_go_mod_str, parse_hash_manifest, parse_mise_toml,
+    parse_mise_toml_str, parse_node_version, parse_node_version_str, parse_nvmrc, parse_nvmrc_str,
+    parse_package_json, parse_package_json_str, parse_pyproject_toml, parse_pyproject_toml_str,
+    parse_python_version, parse_python_version_str, parse_rust_toolchain, parse_tool_versions,
+    parse_tool_versions_str,
 };
 use env_check_types::{ProbeKind, SourceKind};
 
@@ -502,4 +505,642 @@ fn parse_all_discovers_rust_toolchain() {
         .sources_used
         .iter()
         .any(|s| s.kind == SourceKind::RustToolchain));
+}
+
+// =============================================================================
+// Python version tests
+// =============================================================================
+
+#[test]
+fn python_version_parses_basic() {
+    let root = Path::new("tests/fixtures/python_version_basic");
+    let path = root.join(".python-version");
+    let reqs = parse_python_version(root, &path).unwrap();
+    assert_eq!(reqs.len(), 1);
+    assert_eq!(reqs[0].tool, "python");
+    assert_eq!(reqs[0].constraint, Some("3.11.4".to_string()));
+}
+
+#[test]
+fn python_version_parses_pypy() {
+    let root = Path::new("tests/fixtures/python_version_pypy");
+    let path = root.join(".python-version");
+    let reqs = parse_python_version(root, &path).unwrap();
+    assert_eq!(reqs.len(), 1);
+    assert_eq!(reqs[0].tool, "python");
+    assert_eq!(reqs[0].constraint, Some("pypy3.9-7.3.9".to_string()));
+}
+
+#[test]
+fn python_version_with_comments() {
+    let root = Path::new("tests/fixtures/python_version_comments");
+    let path = root.join(".python-version");
+    let reqs = parse_python_version(root, &path).unwrap();
+    assert_eq!(reqs.len(), 1);
+    assert_eq!(reqs[0].constraint, Some("3.12.0".to_string()));
+}
+
+#[test]
+fn python_version_sets_correct_source_kind() {
+    let root = Path::new("/fake");
+    let path = root.join(".python-version");
+    let reqs = parse_python_version_str(root, &path, "3.11").unwrap();
+    assert_eq!(reqs[0].source.kind, SourceKind::PythonVersion);
+}
+
+#[test]
+fn python_version_sets_path_tool_probe_kind() {
+    let root = Path::new("/fake");
+    let path = root.join(".python-version");
+    let reqs = parse_python_version_str(root, &path, "3.11").unwrap();
+    assert_eq!(reqs[0].probe_kind, ProbeKind::PathTool);
+}
+
+#[test]
+fn python_version_marked_as_required() {
+    let root = Path::new("/fake");
+    let path = root.join(".python-version");
+    let reqs = parse_python_version_str(root, &path, "3.11").unwrap();
+    assert!(reqs[0].required);
+}
+
+#[test]
+fn python_version_empty_file() {
+    let root = Path::new("/fake");
+    let path = root.join(".python-version");
+    let reqs = parse_python_version_str(root, &path, "").unwrap();
+    assert!(reqs.is_empty());
+}
+
+#[test]
+fn python_version_whitespace_only() {
+    let root = Path::new("/fake");
+    let path = root.join(".python-version");
+    let reqs = parse_python_version_str(root, &path, "  \n  \t  ").unwrap();
+    assert!(reqs.is_empty());
+}
+
+#[test]
+fn python_version_trims_whitespace() {
+    let root = Path::new("/fake");
+    let path = root.join(".python-version");
+    let reqs = parse_python_version_str(root, &path, "  3.11  \n").unwrap();
+    assert_eq!(reqs[0].constraint, Some("3.11".to_string()));
+}
+
+// =============================================================================
+// pyproject.toml tests
+// =============================================================================
+
+#[test]
+fn pyproject_toml_parses_basic() {
+    let root = Path::new("tests/fixtures/pyproject_basic");
+    let path = root.join("pyproject.toml");
+    let reqs = parse_pyproject_toml(root, &path).unwrap();
+    assert_eq!(reqs.len(), 1);
+    assert_eq!(reqs[0].tool, "python");
+    assert_eq!(reqs[0].constraint, Some(">=3.8".to_string()));
+}
+
+#[test]
+fn pyproject_toml_no_requires_python() {
+    let root = Path::new("tests/fixtures/pyproject_no_requires");
+    let path = root.join("pyproject.toml");
+    let reqs = parse_pyproject_toml(root, &path).unwrap();
+    assert!(reqs.is_empty());
+}
+
+#[test]
+fn pyproject_toml_invalid_is_error() {
+    let root = Path::new("tests/fixtures/pyproject_invalid");
+    let path = root.join("pyproject.toml");
+    let result = parse_pyproject_toml(root, &path);
+    assert!(result.is_err());
+}
+
+#[test]
+fn pyproject_toml_sets_correct_source_kind() {
+    let root = Path::new("/fake");
+    let path = root.join("pyproject.toml");
+    let content = "[project]\nrequires-python = \">=3.8\"";
+    let reqs = parse_pyproject_toml_str(root, &path, content).unwrap();
+    assert_eq!(reqs[0].source.kind, SourceKind::PyprojectToml);
+}
+
+#[test]
+fn pyproject_toml_sets_path_tool_probe_kind() {
+    let root = Path::new("/fake");
+    let path = root.join("pyproject.toml");
+    let content = "[project]\nrequires-python = \">=3.8\"";
+    let reqs = parse_pyproject_toml_str(root, &path, content).unwrap();
+    assert_eq!(reqs[0].probe_kind, ProbeKind::PathTool);
+}
+
+#[test]
+fn pyproject_toml_marked_as_required() {
+    let root = Path::new("/fake");
+    let path = root.join("pyproject.toml");
+    let content = "[project]\nrequires-python = \">=3.8\"";
+    let reqs = parse_pyproject_toml_str(root, &path, content).unwrap();
+    assert!(reqs[0].required);
+}
+
+#[test]
+fn pyproject_toml_preserves_pep440_constraint() {
+    let root = Path::new("/fake");
+    let path = root.join("pyproject.toml");
+    let content = "[project]\nrequires-python = \">=3.8,<4.0,!=3.9.0\"";
+    let reqs = parse_pyproject_toml_str(root, &path, content).unwrap();
+    assert_eq!(reqs[0].constraint, Some(">=3.8,<4.0,!=3.9.0".to_string()));
+}
+
+#[test]
+fn pyproject_toml_no_project_section() {
+    let root = Path::new("/fake");
+    let path = root.join("pyproject.toml");
+    let content = "[tool.pytest]\ntestpaths = [\"tests\"]";
+    let reqs = parse_pyproject_toml_str(root, &path, content).unwrap();
+    assert!(reqs.is_empty());
+}
+
+#[test]
+fn pyproject_toml_empty_file() {
+    let root = Path::new("/fake");
+    let path = root.join("pyproject.toml");
+    let reqs = parse_pyproject_toml_str(root, &path, "").unwrap();
+    assert!(reqs.is_empty());
+}
+
+#[test]
+fn parse_all_discovers_python_version() {
+    let root = Path::new("tests/fixtures/python_version_basic");
+    let parsed = parse_all(root, &[]);
+    assert!(parsed
+        .sources_used
+        .iter()
+        .any(|s| s.kind == SourceKind::PythonVersion));
+}
+
+#[test]
+fn parse_all_discovers_pyproject_toml() {
+    let root = Path::new("tests/fixtures/pyproject_basic");
+    let parsed = parse_all(root, &[]);
+    assert!(parsed
+        .sources_used
+        .iter()
+        .any(|s| s.kind == SourceKind::PyprojectToml));
+}
+
+#[test]
+fn parse_all_records_pyproject_parse_error() {
+    let root = Path::new("tests/fixtures/pyproject_invalid");
+    let parsed = parse_all(root, &[]);
+    assert!(
+        !parsed.findings.is_empty(),
+        "Expected parse error finding for invalid pyproject.toml"
+    );
+}
+
+// =============================================================================
+// go.mod tests
+// =============================================================================
+
+#[test]
+fn go_mod_parses_basic() {
+    let root = Path::new("tests/fixtures/go_mod_basic");
+    let path = root.join("go.mod");
+    let reqs = parse_go_mod(root, &path).unwrap();
+    assert_eq!(reqs.len(), 1);
+    assert_eq!(reqs[0].tool, "go");
+    assert_eq!(reqs[0].constraint, Some(">=1.21".to_string()));
+}
+
+#[test]
+fn go_mod_parses_complex() {
+    let root = Path::new("tests/fixtures/go_mod_complex");
+    let path = root.join("go.mod");
+    let reqs = parse_go_mod(root, &path).unwrap();
+    assert_eq!(reqs.len(), 1);
+    assert_eq!(reqs[0].tool, "go");
+    assert_eq!(reqs[0].constraint, Some(">=1.21.5".to_string()));
+}
+
+#[test]
+fn go_mod_with_comments() {
+    let root = Path::new("tests/fixtures/go_mod_comments");
+    let path = root.join("go.mod");
+    let reqs = parse_go_mod(root, &path).unwrap();
+    assert_eq!(reqs.len(), 1);
+    assert_eq!(reqs[0].constraint, Some(">=1.22".to_string()));
+}
+
+#[test]
+fn go_mod_missing_directive_is_error() {
+    let root = Path::new("tests/fixtures/go_mod_missing_directive");
+    let path = root.join("go.mod");
+    let result = parse_go_mod(root, &path);
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(err_msg.contains("missing go directive"));
+}
+
+#[test]
+fn go_mod_with_toolchain() {
+    // Should extract the go directive, ignore toolchain directive
+    let root = Path::new("tests/fixtures/go_mod_with_toolchain");
+    let path = root.join("go.mod");
+    let reqs = parse_go_mod(root, &path).unwrap();
+    assert_eq!(reqs.len(), 1);
+    assert_eq!(reqs[0].constraint, Some(">=1.21".to_string()));
+}
+
+#[test]
+fn go_mod_sets_correct_source_kind() {
+    let root = Path::new("/fake");
+    let path = root.join("go.mod");
+    let reqs = parse_go_mod_str(root, &path, "module example.com/test\n\ngo 1.21\n").unwrap();
+    assert_eq!(reqs[0].source.kind, SourceKind::GoMod);
+}
+
+#[test]
+fn go_mod_sets_path_tool_probe_kind() {
+    let root = Path::new("/fake");
+    let path = root.join("go.mod");
+    let reqs = parse_go_mod_str(root, &path, "module example.com/test\n\ngo 1.21\n").unwrap();
+    assert_eq!(reqs[0].probe_kind, ProbeKind::PathTool);
+}
+
+#[test]
+fn go_mod_marked_as_required() {
+    let root = Path::new("/fake");
+    let path = root.join("go.mod");
+    let reqs = parse_go_mod_str(root, &path, "module example.com/test\n\ngo 1.21\n").unwrap();
+    assert!(reqs[0].required);
+}
+
+#[test]
+fn go_mod_empty_file_is_error() {
+    let root = Path::new("/fake");
+    let path = root.join("go.mod");
+    let result = parse_go_mod_str(root, &path, "");
+    assert!(result.is_err());
+}
+
+#[test]
+fn go_mod_invalid_version_is_error() {
+    let root = Path::new("/fake");
+    let path = root.join("go.mod");
+    let result = parse_go_mod_str(root, &path, "module example.com/test\n\ngo invalid\n");
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(err_msg.contains("invalid go version format"));
+}
+
+#[test]
+fn go_mod_constraint_is_minimum_version() {
+    // The go directive specifies minimum version, so constraint should be >=
+    let root = Path::new("/fake");
+    let path = root.join("go.mod");
+    let reqs = parse_go_mod_str(root, &path, "go 1.21\n").unwrap();
+    assert!(reqs[0].constraint.as_ref().unwrap().starts_with(">="));
+}
+
+#[test]
+fn go_mod_relative_path_stored() {
+    let root = Path::new("/fake/project");
+    let path = root.join("go.mod");
+    let reqs = parse_go_mod_str(root, &path, "go 1.21\n").unwrap();
+    assert_eq!(reqs[0].source.path, "go.mod");
+}
+
+#[test]
+fn parse_all_discovers_go_mod() {
+    let root = Path::new("tests/fixtures/go_mod_basic");
+    let parsed = parse_all(root, &[]);
+    assert!(parsed
+        .sources_used
+        .iter()
+        .any(|s| s.kind == SourceKind::GoMod));
+}
+
+#[test]
+fn parse_all_records_go_mod_parse_error() {
+    let root = Path::new("tests/fixtures/go_mod_missing_directive");
+    let parsed = parse_all(root, &[]);
+    assert!(
+        !parsed.findings.is_empty(),
+        "Expected parse error finding for go.mod without go directive"
+    );
+}
+
+// =============================================================================
+// .node-version tests
+// =============================================================================
+
+#[test]
+fn node_version_parses_basic() {
+    let root = Path::new("tests/fixtures/node_version_basic");
+    let path = root.join(".node-version");
+    let reqs = parse_node_version(root, &path).unwrap();
+    assert_eq!(reqs.len(), 1);
+    assert_eq!(reqs[0].tool, "node");
+    assert_eq!(reqs[0].constraint, Some("20.11.0".to_string()));
+}
+
+#[test]
+fn node_version_sets_correct_source_kind() {
+    let root = Path::new("/fake");
+    let path = root.join(".node-version");
+    let reqs = parse_node_version_str(root, &path, "20.0.0").unwrap();
+    assert_eq!(reqs[0].source.kind, SourceKind::NodeVersion);
+}
+
+#[test]
+fn node_version_sets_path_tool_probe_kind() {
+    let root = Path::new("/fake");
+    let path = root.join(".node-version");
+    let reqs = parse_node_version_str(root, &path, "20.0.0").unwrap();
+    assert_eq!(reqs[0].probe_kind, ProbeKind::PathTool);
+}
+
+#[test]
+fn node_version_marked_as_required() {
+    let root = Path::new("/fake");
+    let path = root.join(".node-version");
+    let reqs = parse_node_version_str(root, &path, "20.0.0").unwrap();
+    assert!(reqs[0].required);
+}
+
+#[test]
+fn node_version_strips_v_prefix() {
+    let root = Path::new("/fake");
+    let path = root.join(".node-version");
+    let reqs = parse_node_version_str(root, &path, "v20.0.0").unwrap();
+    assert_eq!(reqs[0].constraint, Some("20.0.0".to_string()));
+}
+
+#[test]
+fn node_version_empty_file() {
+    let root = Path::new("/fake");
+    let path = root.join(".node-version");
+    let reqs = parse_node_version_str(root, &path, "").unwrap();
+    assert!(reqs.is_empty());
+}
+
+#[test]
+fn node_version_comments_only() {
+    let root = Path::new("/fake");
+    let path = root.join(".node-version");
+    let reqs = parse_node_version_str(root, &path, "# comment\n# another").unwrap();
+    assert!(reqs.is_empty());
+}
+
+#[test]
+fn node_version_trims_whitespace() {
+    let root = Path::new("/fake");
+    let path = root.join(".node-version");
+    let reqs = parse_node_version_str(root, &path, "  20.11.0  \n").unwrap();
+    assert_eq!(reqs[0].constraint, Some("20.11.0".to_string()));
+}
+
+#[test]
+fn node_version_with_comments() {
+    let root = Path::new("/fake");
+    let path = root.join(".node-version");
+    let reqs = parse_node_version_str(root, &path, "# Node version\n20.11.0\n").unwrap();
+    assert_eq!(reqs[0].constraint, Some("20.11.0".to_string()));
+}
+
+// =============================================================================
+// .nvmrc tests
+// =============================================================================
+
+#[test]
+fn nvmrc_parses_basic() {
+    let root = Path::new("tests/fixtures/nvmrc_basic");
+    let path = root.join(".nvmrc");
+    let reqs = parse_nvmrc(root, &path).unwrap();
+    assert_eq!(reqs.len(), 1);
+    assert_eq!(reqs[0].tool, "node");
+    assert_eq!(reqs[0].constraint, Some("18.19.0".to_string()));
+}
+
+#[test]
+fn nvmrc_sets_correct_source_kind() {
+    let root = Path::new("/fake");
+    let path = root.join(".nvmrc");
+    let reqs = parse_nvmrc_str(root, &path, "20.0.0").unwrap();
+    assert_eq!(reqs[0].source.kind, SourceKind::Nvmrc);
+}
+
+#[test]
+fn nvmrc_sets_path_tool_probe_kind() {
+    let root = Path::new("/fake");
+    let path = root.join(".nvmrc");
+    let reqs = parse_nvmrc_str(root, &path, "20.0.0").unwrap();
+    assert_eq!(reqs[0].probe_kind, ProbeKind::PathTool);
+}
+
+#[test]
+fn nvmrc_marked_as_required() {
+    let root = Path::new("/fake");
+    let path = root.join(".nvmrc");
+    let reqs = parse_nvmrc_str(root, &path, "20.0.0").unwrap();
+    assert!(reqs[0].required);
+}
+
+#[test]
+fn nvmrc_strips_v_prefix() {
+    let root = Path::new("/fake");
+    let path = root.join(".nvmrc");
+    let reqs = parse_nvmrc_str(root, &path, "v18.0.0").unwrap();
+    assert_eq!(reqs[0].constraint, Some("18.0.0".to_string()));
+}
+
+#[test]
+fn nvmrc_lts_alias() {
+    let root = Path::new("/fake");
+    let path = root.join(".nvmrc");
+    let reqs = parse_nvmrc_str(root, &path, "lts/*").unwrap();
+    assert_eq!(reqs[0].constraint, Some("lts/*".to_string()));
+}
+
+#[test]
+fn nvmrc_node_alias() {
+    let root = Path::new("/fake");
+    let path = root.join(".nvmrc");
+    let reqs = parse_nvmrc_str(root, &path, "node").unwrap();
+    assert_eq!(reqs[0].constraint, Some("node".to_string()));
+}
+
+#[test]
+fn nvmrc_empty_file() {
+    let root = Path::new("/fake");
+    let path = root.join(".nvmrc");
+    let reqs = parse_nvmrc_str(root, &path, "").unwrap();
+    assert!(reqs.is_empty());
+}
+
+// =============================================================================
+// package.json tests
+// =============================================================================
+
+#[test]
+fn package_json_parses_engines_node() {
+    let root = Path::new("tests/fixtures/package_json_basic");
+    let path = root.join("package.json");
+    let reqs = parse_package_json(root, &path).unwrap();
+    assert_eq!(reqs.len(), 1);
+    assert_eq!(reqs[0].tool, "node");
+    assert_eq!(reqs[0].constraint, Some(">=18.0.0".to_string()));
+}
+
+#[test]
+fn package_json_parses_full() {
+    let root = Path::new("tests/fixtures/package_json_full");
+    let path = root.join("package.json");
+    let reqs = parse_package_json(root, &path).unwrap();
+    assert_eq!(reqs.len(), 2);
+    assert!(reqs.iter().any(|r| r.tool == "node"));
+    assert!(reqs.iter().any(|r| r.tool == "pnpm"));
+}
+
+#[test]
+fn package_json_sets_correct_source_kind() {
+    let root = Path::new("/fake");
+    let path = root.join("package.json");
+    let json = r#"{"engines": {"node": ">=18"}}"#;
+    let reqs = parse_package_json_str(root, &path, json).unwrap();
+    assert_eq!(reqs[0].source.kind, SourceKind::PackageJson);
+}
+
+#[test]
+fn package_json_sets_path_tool_probe_kind() {
+    let root = Path::new("/fake");
+    let path = root.join("package.json");
+    let json = r#"{"engines": {"node": ">=18"}}"#;
+    let reqs = parse_package_json_str(root, &path, json).unwrap();
+    assert_eq!(reqs[0].probe_kind, ProbeKind::PathTool);
+}
+
+#[test]
+fn package_json_marked_as_required() {
+    let root = Path::new("/fake");
+    let path = root.join("package.json");
+    let json = r#"{"engines": {"node": ">=18"}}"#;
+    let reqs = parse_package_json_str(root, &path, json).unwrap();
+    assert!(reqs[0].required);
+}
+
+#[test]
+fn package_json_package_manager_pnpm() {
+    let root = Path::new("/fake");
+    let path = root.join("package.json");
+    let json = r#"{"packageManager": "pnpm@8.15.0"}"#;
+    let reqs = parse_package_json_str(root, &path, json).unwrap();
+    assert_eq!(reqs[0].tool, "pnpm");
+    assert_eq!(reqs[0].constraint, Some("8.15.0".to_string()));
+}
+
+#[test]
+fn package_json_package_manager_npm() {
+    let root = Path::new("/fake");
+    let path = root.join("package.json");
+    let json = r#"{"packageManager": "npm@10.2.3"}"#;
+    let reqs = parse_package_json_str(root, &path, json).unwrap();
+    assert_eq!(reqs[0].tool, "npm");
+    assert_eq!(reqs[0].constraint, Some("10.2.3".to_string()));
+}
+
+#[test]
+fn package_json_package_manager_yarn() {
+    let root = Path::new("/fake");
+    let path = root.join("package.json");
+    let json = r#"{"packageManager": "yarn@4.0.0"}"#;
+    let reqs = parse_package_json_str(root, &path, json).unwrap();
+    assert_eq!(reqs[0].tool, "yarn");
+    assert_eq!(reqs[0].constraint, Some("4.0.0".to_string()));
+}
+
+#[test]
+fn package_json_package_manager_with_hash() {
+    let root = Path::new("/fake");
+    let path = root.join("package.json");
+    let json = r#"{"packageManager": "pnpm@8.15.0+sha256.abc123"}"#;
+    let reqs = parse_package_json_str(root, &path, json).unwrap();
+    assert_eq!(reqs[0].constraint, Some("8.15.0".to_string()));
+}
+
+#[test]
+fn package_json_no_relevant_fields() {
+    let root = Path::new("/fake");
+    let path = root.join("package.json");
+    let json = r#"{"name": "test", "version": "1.0.0"}"#;
+    let reqs = parse_package_json_str(root, &path, json).unwrap();
+    assert!(reqs.is_empty());
+}
+
+#[test]
+fn package_json_empty_object() {
+    let root = Path::new("/fake");
+    let path = root.join("package.json");
+    let reqs = parse_package_json_str(root, &path, "{}").unwrap();
+    assert!(reqs.is_empty());
+}
+
+#[test]
+fn package_json_invalid_json_is_error() {
+    let root = Path::new("/fake");
+    let path = root.join("package.json");
+    let result = parse_package_json_str(root, &path, "not valid json");
+    assert!(result.is_err());
+}
+
+#[test]
+fn package_json_engines_semver_range() {
+    let root = Path::new("/fake");
+    let path = root.join("package.json");
+    let json = r#"{"engines": {"node": "^18.0.0 || ^20.0.0"}}"#;
+    let reqs = parse_package_json_str(root, &path, json).unwrap();
+    assert_eq!(reqs[0].constraint, Some("^18.0.0 || ^20.0.0".to_string()));
+}
+
+#[test]
+fn parse_all_discovers_node_version() {
+    let root = Path::new("tests/fixtures/node_version_basic");
+    let parsed = parse_all(root, &[]);
+    assert!(parsed
+        .sources_used
+        .iter()
+        .any(|s| s.kind == SourceKind::NodeVersion));
+}
+
+#[test]
+fn parse_all_discovers_nvmrc() {
+    let root = Path::new("tests/fixtures/nvmrc_basic");
+    let parsed = parse_all(root, &[]);
+    assert!(parsed
+        .sources_used
+        .iter()
+        .any(|s| s.kind == SourceKind::Nvmrc));
+}
+
+#[test]
+fn parse_all_discovers_package_json() {
+    let root = Path::new("tests/fixtures/package_json_basic");
+    let parsed = parse_all(root, &[]);
+    assert!(parsed
+        .sources_used
+        .iter()
+        .any(|s| s.kind == SourceKind::PackageJson));
+}
+
+#[test]
+fn parse_all_records_package_json_parse_error() {
+    let root = Path::new("tests/fixtures/malformed_package_json");
+    let parsed = parse_all(root, &[]);
+    assert!(
+        !parsed.findings.is_empty(),
+        "Expected parse error finding for malformed package.json"
+    );
 }

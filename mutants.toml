@@ -1,10 +1,35 @@
-# cargo-mutants config (timeboxed in CI)
+# cargo-mutants configuration
+# See https://mutants.rs/config.html for all options
+#
+# Run mutation testing via xtask:
+#   cargo run -p xtask -- mutants
+#
+# Or directly:
+#   cargo mutants -p env-check-domain
 
-[mutants]
-# Keep the scope tight for signal.
+# Global timeout per mutant (seconds) - prevents hanging on infinite loops
+timeout = 60
+
+# Skip slow tests by regex pattern
+exclude_re = ["bdd", "integration"]
+
+# Exclude globs - keep the scope tight for signal
 exclude_globs = [
+  # CLI and app crates involve I/O, less valuable for mutation testing
   "crates/env-check-cli/**",
   "crates/env-check-app/**",
+  # Test code shouldn't be mutated
   "**/tests/**",
+  # Fuzz targets shouldn't be mutated
   "fuzz/**",
+  # Build/task tooling
+  "xtask/**",
 ]
+
+# Examine globs - explicitly include what we want to mutate
+# Uncomment to be more explicit about what to include
+# examine_globs = [
+#   "crates/env-check-domain/**",
+#   "crates/env-check-sources/**",
+#   "crates/env-check-types/**",
+# ]

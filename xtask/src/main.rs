@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
+use std::process::Command;
 
 use anyhow::{Context, bail};
 
@@ -7,12 +8,25 @@ fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
         Some("schema-check") => schema_check(),
+        Some("mutants") => mutants(args.collect()),
+        Some("--help") | Some("-h") => {
+            print_help();
+            Ok(())
+        }
         _ => {
-            eprintln!("xtask commands:");
-            eprintln!("  schema-check   Validate schemas and example receipts");
+            print_help();
             Ok(())
         }
     }
+}
+
+fn print_help() {
+    eprintln!("xtask commands:");
+    eprintln!("  schema-check   Validate schemas and example receipts");
+    eprintln!("  mutants        Run cargo-mutants on domain crate (requires cargo-mutants)");
+    eprintln!();
+    eprintln!("Options:");
+    eprintln!("  -h, --help     Show this help message");
 }
 
 fn schema_check() -> anyhow::Result<()> {
@@ -174,6 +188,69 @@ fn create_example_fixtures() -> anyhow::Result<()> {
         serde_json::to_string_pretty(&fail_report)?,
     )?;
     eprintln!("created: xtask/fixtures/fail_report.json");
+
+    Ok(())
+}
+
+/// Run cargo-mutants with sane defaults for the env-check workspace.
+///
+/// Default behavior:
+/// - Targets env-check-domain crate (pure logic, most valuable to mutate)
+/// - 60-second timeout per mutant (avoids hanging on slow tests)
+/// - Uses existing mutants.toml for exclude patterns
+///
+/// Extra args are passed through to cargo-mutants (e.g., `--jobs 4`).
+fn mutants(extra_args: Vec<String>) -> anyhow::Result<()> {
+    // Check if cargo-mutants is installed
+    let check = Command::new("cargo")
+        .args(["mutants", "--version"])
+        .output();
+
+    match check {
+        Ok(output) if output.status.success() => {
+            let version = String::from_utf8_lossy(&output.stdout);
+            eprintln!("Using {}", version.trim());
+        }
+        _ => {
+            bail!(
+                "cargo-mutants not found. Install with:\n\n  \
+                 cargo install cargo-mutants\n\n\
+                 See https://mutants.rs for documentation."
+            );
+        }
+    }
+
+    // Build the command with default arguments
+    let mut cmd = Command::new("cargo");
+    cmd.args([
+        "mutants",
+        // Focus on domain crate - pure logic, most valuable to mutate
+        "-p",
+        "env-check-domain",
+        // Reasonable timeout to avoid hanging on slow/infinite loops
+        "--timeout",
+        "60",
+        // Skip tests that take too long (BDD, integration)
+        "--exclude-re",
+        "bdd|integration",
+    ]);
+
+    // Pass through any extra arguments from the user
+    cmd.args(&extra_args);
+
+    eprintln!("Running: cargo mutants -p env-check-domain --timeout 60 --exclude-re 'bdd|integration' {}",
+        extra_args.join(" "));
+    eprintln!();
+
+    // Run and inherit stdio for live output
+    let status = cmd
+        .status()
+        .context("failed to run cargo mutants")?;
+
+    if !status.success() {
+        // Exit with the same code as cargo-mutants
+        std::process::exit(status.code().unwrap_or(1));
+    }
 
     Ok(())
 }

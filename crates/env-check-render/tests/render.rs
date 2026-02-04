@@ -565,6 +565,10 @@ fn render_with_ci_metadata() {
             provider: "github-actions".into(),
             job: Some("build".into()),
             run_id: Some("12345678".into()),
+            workflow: Some("CI".into()),
+            repository: Some("example/repo".into()),
+            git_ref: Some("refs/heads/feature/add-tests".into()),
+            sha: Some("def456".into()),
         }),
         git: Some(GitMeta {
             repo: Some("example/repo".into()),
@@ -573,6 +577,7 @@ fn render_with_ci_metadata() {
             base_sha: Some("abc123".into()),
             head_sha: Some("def456".into()),
             merge_base: None,
+            pr_number: Some(42),
         }),
     };
     let receipt = make_receipt_with_run_meta(

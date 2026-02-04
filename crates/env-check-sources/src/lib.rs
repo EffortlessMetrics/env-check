@@ -1,11 +1,24 @@
 //! Parse repo sources into normalized Requirements.
 
+pub mod go_mod;
+pub mod node;
+pub mod python;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use env_check_types::{
     checks, codes, Finding, Location, ProbeKind, Requirement, Severity, SourceKind, SourceRef,
+};
+
+pub use go_mod::{parse_go_mod, parse_go_mod_str};
+pub use node::{
+    parse_node_version, parse_node_version_str, parse_nvmrc, parse_nvmrc_str, parse_package_json,
+    parse_package_json_str,
+};
+pub use python::{
+    parse_pyproject_toml, parse_pyproject_toml_str, parse_python_version, parse_python_version_str,
 };
 
 #[derive(Debug, Clone)]
@@ -35,6 +48,12 @@ pub fn parse_all(root: &Path, hash_manifests: &[PathBuf]) -> ParsedSources {
         (SourceKind::RustToolchain, root.join("rust-toolchain")),
         (SourceKind::MiseToml, root.join(".mise.toml")),
         (SourceKind::ToolVersions, root.join(".tool-versions")),
+        (SourceKind::NodeVersion, root.join(".node-version")),
+        (SourceKind::Nvmrc, root.join(".nvmrc")),
+        (SourceKind::PackageJson, root.join("package.json")),
+        (SourceKind::PythonVersion, root.join(".python-version")),
+        (SourceKind::PyprojectToml, root.join("pyproject.toml")),
+        (SourceKind::GoMod, root.join("go.mod")),
     ];
 
     for (kind, path) in candidates {
@@ -53,6 +72,30 @@ pub fn parse_all(root: &Path, hash_manifests: &[PathBuf]) -> ParsedSources {
                     Err(e) => out.findings.push(parse_error_finding(root, &path, e)),
                 },
                 SourceKind::RustToolchain => match parse_rust_toolchain(root, &path) {
+                    Ok(reqs) => out.requirements.extend(reqs),
+                    Err(e) => out.findings.push(parse_error_finding(root, &path, e)),
+                },
+                SourceKind::NodeVersion => match node::parse_node_version(root, &path) {
+                    Ok(reqs) => out.requirements.extend(reqs),
+                    Err(e) => out.findings.push(parse_error_finding(root, &path, e)),
+                },
+                SourceKind::Nvmrc => match node::parse_nvmrc(root, &path) {
+                    Ok(reqs) => out.requirements.extend(reqs),
+                    Err(e) => out.findings.push(parse_error_finding(root, &path, e)),
+                },
+                SourceKind::PackageJson => match node::parse_package_json(root, &path) {
+                    Ok(reqs) => out.requirements.extend(reqs),
+                    Err(e) => out.findings.push(parse_error_finding(root, &path, e)),
+                },
+                SourceKind::PythonVersion => match python::parse_python_version(root, &path) {
+                    Ok(reqs) => out.requirements.extend(reqs),
+                    Err(e) => out.findings.push(parse_error_finding(root, &path, e)),
+                },
+                SourceKind::PyprojectToml => match python::parse_pyproject_toml(root, &path) {
+                    Ok(reqs) => out.requirements.extend(reqs),
+                    Err(e) => out.findings.push(parse_error_finding(root, &path, e)),
+                },
+                SourceKind::GoMod => match go_mod::parse_go_mod(root, &path) {
                     Ok(reqs) => out.requirements.extend(reqs),
                     Err(e) => out.findings.push(parse_error_finding(root, &path, e)),
                 },
@@ -292,7 +335,7 @@ fn normalize_tool_id(raw: &str) -> String {
     .to_string()
 }
 
-fn rel(root: &Path, path: &Path) -> String {
+pub(crate) fn rel(root: &Path, path: &Path) -> String {
     path.strip_prefix(root)
         .unwrap_or(path)
         .to_string_lossy()

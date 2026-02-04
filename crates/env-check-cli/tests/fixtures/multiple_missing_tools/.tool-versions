@@ -1,0 +1,4 @@
+# Multiple nonexistent tools for testing counts and multiple findings
+fake-tool-alpha 1.0.0
+fake-tool-beta 2.0.0
+fake-tool-gamma 3.0.0

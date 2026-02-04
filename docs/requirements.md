@@ -24,9 +24,27 @@ Provide a machine-truth preflight that makes environment drift visible and actio
 env-check MUST discover requirements from any subset of supported sources.
 
 **Supported sources (v0.1):**
-- `rust-toolchain.toml` / `rust-toolchain`
+
+*Version managers:*
+- `.tool-versions` (asdf)
 - `.mise.toml`
-- `.tool-versions`
+
+*Rust:*
+- `rust-toolchain.toml` / `rust-toolchain`
+
+*Node.js:*
+- `.node-version`
+- `.nvmrc`
+- `package.json` (engines.node, engines.npm)
+
+*Python:*
+- `.python-version`
+- `pyproject.toml` (requires-python)
+
+*Go:*
+- `go.mod` (go directive)
+
+*Binary verification:*
 - `scripts/tools.sha256` (configurable; optional)
 
 If no supported sources exist, env-check MUST produce a receipt with `verdict.status="skip"` and reason `no_sources`.
@@ -35,7 +53,7 @@ If no supported sources exist, env-check MUST produce a receipt with `verdict.st
 
 env-check MUST normalize all sources into a single internal representation:
 
-- tool id (e.g., `rustc`, `cargo`, `rustup`, `just`, `node`, `pnpm`)
+- tool id (e.g., `rustc`, `cargo`, `rustup`, `just`, `node`, `npm`, `python`, `go`)
 - version constraint (optional)
 - required vs optional
 - source provenance (which file declared it)
@@ -177,11 +195,19 @@ Target: sub-second on typical repos (excluding the cost of probes themselves).
 
 ## Acceptance criteria (v0.1)
 
-- [ ] Running `env-check check` in a repo with no sources yields `skip` receipt.
-- [ ] `.tool-versions` and `.mise.toml` are parsed into normalized requirements deterministically.
-- [ ] Missing required tool under `team` yields error finding + exit code `2`.
-- [ ] Version mismatch yields warn/error depending on profile.
-- [ ] Receipt validates against `schemas/env-check.report.v1.json`.
-- [ ] Golden fixtures cover parsing + evaluation + markdown rendering.
-- [ ] A fuzz target exists for each parser (never panic).
-- [ ] Mutation testing is wired and timeboxed in CI.
+- [x] Running `env-check check` in a repo with no sources yields `skip` receipt.
+- [x] `.tool-versions` and `.mise.toml` are parsed into normalized requirements deterministically.
+- [x] Missing required tool under `team` yields error finding + exit code `2`.
+- [x] Version mismatch yields warn/error depending on profile.
+- [x] Receipt validates against `schemas/env-check.report.v1.json`.
+- [x] Golden fixtures cover parsing + evaluation + markdown rendering.
+- [x] A fuzz target exists for each parser (never panic).
+- [x] Mutation testing is wired and timeboxed in CI.
+
+## Extended source support (implemented)
+
+- [x] `.node-version` and `.nvmrc` parsed for Node.js version
+- [x] `package.json` engines field parsed for node/npm constraints
+- [x] `.python-version` parsed for Python version
+- [x] `pyproject.toml` requires-python parsed
+- [x] `go.mod` go directive parsed for Go version

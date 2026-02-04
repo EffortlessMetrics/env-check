@@ -5,6 +5,12 @@ use env_check_sources::{
     parse_mise_toml_str,
     parse_rust_toolchain_str,
     parse_hash_manifest_str,
+    parse_python_version_str,
+    parse_pyproject_toml_str,
+    parse_node_version_str,
+    parse_nvmrc_str,
+    parse_package_json_str,
+    parse_go_mod_str,
 };
 
 // =============================================================================
@@ -963,5 +969,892 @@ proptest! {
         let hash_result = parse_hash_manifest_str(root, &hash_path, &content);
         prop_assert!(hash_result.is_ok());
         prop_assert!(hash_result.unwrap().is_empty());
+
+        // .python-version
+        let py_path = root.join(".python-version");
+        let py_result = parse_python_version_str(root, &py_path, &content);
+        prop_assert!(py_result.is_ok());
+        prop_assert!(py_result.unwrap().is_empty());
+    }
+}
+
+// =============================================================================
+// .python-version Property Tests
+// =============================================================================
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(1000))]
+
+    /// .python-version parser never panics on arbitrary input
+    #[test]
+    fn python_version_never_panics(s in ".*") {
+        let root = Path::new("/fake");
+        let path = root.join(".python-version");
+        let _ = parse_python_version_str(root, &path, &s);
+    }
+
+    /// .python-version parser handles whitespace variations
+    #[test]
+    fn python_version_whitespace_tolerance(
+        version in "[0-9]{1,2}\\.[0-9]{1,2}(\\.[0-9]{1,2})?",
+        leading_ws in "[ \t\n]{0,5}",
+        trailing_ws in "[ \t\n]{0,5}",
+    ) {
+        let content = format!("{}{}{}", leading_ws, version, trailing_ws);
+        let root = Path::new("/fake");
+        let path = root.join(".python-version");
+        let result = parse_python_version_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        // If there's leading newline before content, we may get empty
+        let trimmed = content.trim();
+        if !trimmed.is_empty() && !trimmed.starts_with('#') {
+            prop_assert_eq!(reqs.len(), 1);
+            prop_assert_eq!(reqs[0].constraint.as_deref(), Some(trimmed));
+        }
+    }
+
+    /// .python-version parser handles comments correctly
+    #[test]
+    fn python_version_comments_ignored(
+        comment in "[^\\n]{0,30}",
+        version in "[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{1,2}",
+    ) {
+        let content = format!("# {}\n{}\n", comment, version);
+        let root = Path::new("/fake");
+        let path = root.join(".python-version");
+        let result = parse_python_version_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+        prop_assert_eq!(reqs[0].constraint.as_deref(), Some(version.as_str()));
+    }
+
+    /// .python-version parser handles pypy-style versions
+    #[test]
+    fn python_version_pypy_format(
+        major in 2u32..4,
+        minor in 0u32..15,
+        pypy_major in 7u32..8,
+        pypy_minor in 0u32..5,
+        pypy_patch in 0u32..20,
+    ) {
+        let version = format!("pypy{}.{}-{}.{}.{}", major, minor, pypy_major, pypy_minor, pypy_patch);
+        let root = Path::new("/fake");
+        let path = root.join(".python-version");
+        let result = parse_python_version_str(root, &path, &version);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+        prop_assert_eq!(reqs[0].constraint.as_deref(), Some(version.as_str()));
+    }
+
+    /// .python-version handles various version formats
+    #[test]
+    fn python_version_formats(
+        major in 2u32..4,
+        minor in 0u32..15,
+    ) {
+        // Test major.minor format
+        let version = format!("{}.{}", major, minor);
+        let root = Path::new("/fake");
+        let path = root.join(".python-version");
+        let result = parse_python_version_str(root, &path, &version);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+        prop_assert_eq!(reqs[0].constraint.as_deref(), Some(version.as_str()));
+    }
+
+    /// .python-version handles full semver format
+    #[test]
+    fn python_version_semver(
+        major in 2u32..4,
+        minor in 0u32..15,
+        patch in 0u32..30,
+    ) {
+        let version = format!("{}.{}.{}", major, minor, patch);
+        let root = Path::new("/fake");
+        let path = root.join(".python-version");
+        let result = parse_python_version_str(root, &path, &version);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+        prop_assert_eq!(reqs[0].constraint.as_deref(), Some(version.as_str()));
+    }
+
+    /// .python-version takes only the first non-comment line
+    #[test]
+    fn python_version_takes_first_line(
+        ver1 in "[0-9]{1,2}\\.[0-9]{1,2}",
+        ver2 in "[0-9]{1,2}\\.[0-9]{1,2}",
+    ) {
+        let content = format!("{}\n{}\n", ver1, ver2);
+        let root = Path::new("/fake");
+        let path = root.join(".python-version");
+        let result = parse_python_version_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+        prop_assert_eq!(reqs[0].constraint.as_deref(), Some(ver1.as_str()));
+    }
+
+    /// .python-version handles blank lines before version
+    #[test]
+    fn python_version_blank_lines(
+        blank_count in 0usize..5,
+        version in "[0-9]{1,2}\\.[0-9]{1,2}",
+    ) {
+        let blanks = "\n".repeat(blank_count);
+        let content = format!("{}{}\n", blanks, version);
+        let root = Path::new("/fake");
+        let path = root.join(".python-version");
+        let result = parse_python_version_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+    }
+
+    /// .python-version handles CRLF line endings
+    #[test]
+    fn python_version_crlf(
+        version in "[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{1,2}",
+    ) {
+        let content = format!("{}\r\n", version);
+        let root = Path::new("/fake");
+        let path = root.join(".python-version");
+        let result = parse_python_version_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+        prop_assert_eq!(reqs[0].constraint.as_deref(), Some(version.as_str()));
+    }
+}
+
+// =============================================================================
+// pyproject.toml Property Tests
+// =============================================================================
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(1000))]
+
+    /// pyproject.toml parser never panics on arbitrary input
+    #[test]
+    fn pyproject_toml_never_panics(s in ".*") {
+        let root = Path::new("/fake");
+        let path = root.join("pyproject.toml");
+        let _ = parse_pyproject_toml_str(root, &path, &s);
+    }
+
+    /// pyproject.toml handles valid requires-python constraints
+    #[test]
+    fn pyproject_toml_valid_requires_python(
+        major in 2u32..4,
+        minor in 0u32..15,
+    ) {
+        let constraint = format!(">={}.{}", major, minor);
+        let content = format!("[project]\nrequires-python = \"{}\"", constraint);
+        let root = Path::new("/fake");
+        let path = root.join("pyproject.toml");
+        let result = parse_pyproject_toml_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+        prop_assert_eq!(reqs[0].constraint.as_deref(), Some(constraint.as_str()));
+    }
+
+    /// pyproject.toml handles complex PEP 440 constraints
+    #[test]
+    fn pyproject_toml_pep440_constraints(
+        major1 in 2u32..4,
+        minor1 in 0u32..15,
+        major2 in 3u32..5,
+    ) {
+        let constraint = format!(">={}.{},<{}", major1, minor1, major2);
+        let content = format!("[project]\nrequires-python = \"{}\"", constraint);
+        let root = Path::new("/fake");
+        let path = root.join("pyproject.toml");
+        let result = parse_pyproject_toml_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+        prop_assert_eq!(reqs[0].constraint.as_deref(), Some(constraint.as_str()));
+    }
+
+    /// pyproject.toml handles exact version constraints
+    #[test]
+    fn pyproject_toml_exact_version(
+        major in 2u32..4,
+        minor in 0u32..15,
+        patch in 0u32..30,
+    ) {
+        let constraint = format!("=={}.{}.{}", major, minor, patch);
+        let content = format!("[project]\nrequires-python = \"{}\"", constraint);
+        let root = Path::new("/fake");
+        let path = root.join("pyproject.toml");
+        let result = parse_pyproject_toml_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+        prop_assert_eq!(reqs[0].constraint.as_deref(), Some(constraint.as_str()));
+    }
+
+    /// pyproject.toml handles tilde constraints
+    #[test]
+    fn pyproject_toml_tilde_constraint(
+        major in 2u32..4,
+        minor in 0u32..15,
+    ) {
+        let constraint = format!("~={}.{}", major, minor);
+        let content = format!("[project]\nrequires-python = \"{}\"", constraint);
+        let root = Path::new("/fake");
+        let path = root.join("pyproject.toml");
+        let result = parse_pyproject_toml_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+        prop_assert_eq!(reqs[0].constraint.as_deref(), Some(constraint.as_str()));
+    }
+
+    /// pyproject.toml with other sections is still valid
+    #[test]
+    fn pyproject_toml_with_tool_sections(
+        major in 2u32..4,
+        minor in 0u32..15,
+    ) {
+        let constraint = format!(">={}.{}", major, minor);
+        let content = format!(
+            "[build-system]\nrequires = [\"setuptools\"]\n\n[project]\nrequires-python = \"{}\"\n\n[tool.pytest]\ntestpaths = [\"tests\"]",
+            constraint
+        );
+        let root = Path::new("/fake");
+        let path = root.join("pyproject.toml");
+        let result = parse_pyproject_toml_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+        prop_assert_eq!(reqs[0].constraint.as_deref(), Some(constraint.as_str()));
+    }
+
+    /// pyproject.toml empty file returns no requirements
+    #[test]
+    fn pyproject_toml_empty(_dummy in 0..1i32) {
+        let root = Path::new("/fake");
+        let path = root.join("pyproject.toml");
+        let result = parse_pyproject_toml_str(root, &path, "");
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert!(reqs.is_empty());
+    }
+
+    /// pyproject.toml without [project] section returns no requirements
+    #[test]
+    fn pyproject_toml_no_project_section(
+        tool_name in "[a-z]{3,10}",
+    ) {
+        let content = format!("[tool.{}]\nfoo = \"bar\"", tool_name);
+        let root = Path::new("/fake");
+        let path = root.join("pyproject.toml");
+        let result = parse_pyproject_toml_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert!(reqs.is_empty());
+    }
+
+    /// pyproject.toml [project] without requires-python returns no requirements
+    #[test]
+    fn pyproject_toml_no_requires_python(
+        name in "[a-z]{3,10}",
+        version in "[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{1,2}",
+    ) {
+        let content = format!("[project]\nname = \"{}\"\nversion = \"{}\"", name, version);
+        let root = Path::new("/fake");
+        let path = root.join("pyproject.toml");
+        let result = parse_pyproject_toml_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert!(reqs.is_empty());
+    }
+}
+
+// =============================================================================
+// .node-version Property Tests
+// =============================================================================
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(1000))]
+
+    /// .node-version parser never panics on arbitrary input
+    #[test]
+    fn node_version_never_panics(s in ".*") {
+        let root = Path::new("/fake");
+        let path = root.join(".node-version");
+        let _ = parse_node_version_str(root, &path, &s);
+    }
+
+    /// .node-version parser handles whitespace variations
+    #[test]
+    fn node_version_whitespace_tolerance(
+        version in "[0-9]{1,2}\\.[0-9]{1,2}(\\.[0-9]{1,2})?",
+        leading_ws in "[ \t\n]{0,5}",
+        trailing_ws in "[ \t\n]{0,5}",
+    ) {
+        let content = format!("{}{}{}", leading_ws, version, trailing_ws);
+        let root = Path::new("/fake");
+        let path = root.join(".node-version");
+        let result = parse_node_version_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        // If there's leading newline before content, we may get empty
+        let trimmed = content.trim();
+        if !trimmed.is_empty() && !trimmed.starts_with('#') {
+            prop_assert_eq!(reqs.len(), 1);
+            prop_assert_eq!(reqs[0].constraint.as_deref(), Some(trimmed));
+        }
+    }
+
+    /// .node-version parser handles v prefix
+    #[test]
+    fn node_version_v_prefix(
+        major in 12u32..22,
+        minor in 0u32..30,
+        patch in 0u32..30,
+    ) {
+        let version = format!("v{}.{}.{}", major, minor, patch);
+        let root = Path::new("/fake");
+        let path = root.join(".node-version");
+        let result = parse_node_version_str(root, &path, &version);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+        // v prefix should be stripped
+        let expected = format!("{}.{}.{}", major, minor, patch);
+        prop_assert_eq!(reqs[0].constraint.as_deref(), Some(expected.as_str()));
+    }
+
+    /// .node-version parser handles comments correctly
+    #[test]
+    fn node_version_comments_ignored(
+        comment in "[^\\n]{0,30}",
+        version in "[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{1,2}",
+    ) {
+        let content = format!("# {}\n{}\n", comment, version);
+        let root = Path::new("/fake");
+        let path = root.join(".node-version");
+        let result = parse_node_version_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+        prop_assert_eq!(reqs[0].constraint.as_deref(), Some(version.as_str()));
+    }
+
+    /// .node-version handles major version only
+    #[test]
+    fn node_version_major_only(
+        major in 12u32..22,
+    ) {
+        let version = format!("{}", major);
+        let root = Path::new("/fake");
+        let path = root.join(".node-version");
+        let result = parse_node_version_str(root, &path, &version);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+        prop_assert_eq!(reqs[0].constraint.as_deref(), Some(version.as_str()));
+    }
+
+    /// .node-version handles CRLF line endings
+    #[test]
+    fn node_version_crlf(
+        version in "[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{1,2}",
+    ) {
+        let content = format!("{}\r\n", version);
+        let root = Path::new("/fake");
+        let path = root.join(".node-version");
+        let result = parse_node_version_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+        prop_assert_eq!(reqs[0].constraint.as_deref(), Some(version.as_str()));
+    }
+}
+
+// =============================================================================
+// .nvmrc Property Tests
+// =============================================================================
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(1000))]
+
+    /// .nvmrc parser never panics on arbitrary input
+    #[test]
+    fn nvmrc_never_panics(s in ".*") {
+        let root = Path::new("/fake");
+        let path = root.join(".nvmrc");
+        let _ = parse_nvmrc_str(root, &path, &s);
+    }
+
+    /// .nvmrc parser handles whitespace variations
+    #[test]
+    fn nvmrc_whitespace_tolerance(
+        version in "[0-9]{1,2}\\.[0-9]{1,2}(\\.[0-9]{1,2})?",
+        leading_ws in "[ \t\n]{0,5}",
+        trailing_ws in "[ \t\n]{0,5}",
+    ) {
+        let content = format!("{}{}{}", leading_ws, version, trailing_ws);
+        let root = Path::new("/fake");
+        let path = root.join(".nvmrc");
+        let result = parse_nvmrc_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        let trimmed = content.trim();
+        if !trimmed.is_empty() && !trimmed.starts_with('#') {
+            prop_assert_eq!(reqs.len(), 1);
+            prop_assert_eq!(reqs[0].constraint.as_deref(), Some(trimmed));
+        }
+    }
+
+    /// .nvmrc handles lts aliases
+    #[test]
+    fn nvmrc_lts_aliases(
+        alias in "(lts/\\*|lts/argon|lts/boron|lts/carbon|lts/dubnium|lts/erbium|lts/fermium|lts/gallium|lts/hydrogen|lts/iron)",
+    ) {
+        let root = Path::new("/fake");
+        let path = root.join(".nvmrc");
+        let result = parse_nvmrc_str(root, &path, &alias);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+        prop_assert_eq!(reqs[0].constraint.as_deref(), Some(alias.as_str()));
+    }
+
+    /// .nvmrc handles special aliases
+    #[test]
+    fn nvmrc_special_aliases(
+        alias in "(node|stable|unstable|iojs)",
+    ) {
+        let root = Path::new("/fake");
+        let path = root.join(".nvmrc");
+        let result = parse_nvmrc_str(root, &path, &alias);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+        prop_assert_eq!(reqs[0].constraint.as_deref(), Some(alias.as_str()));
+    }
+}
+
+// =============================================================================
+// package.json Property Tests
+// =============================================================================
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(500))]
+
+    /// package.json parser never panics on arbitrary input
+    #[test]
+    fn package_json_never_panics(s in ".*") {
+        let root = Path::new("/fake");
+        let path = root.join("package.json");
+        let _ = parse_package_json_str(root, &path, &s);
+    }
+
+    /// package.json handles valid engines.node constraints
+    #[test]
+    fn package_json_valid_engines_node(
+        major in 12u32..22,
+        minor in 0u32..30,
+    ) {
+        let constraint = format!(">={}.{}", major, minor);
+        let content = format!(r#"{{"engines": {{"node": "{}"}}}}"#, constraint);
+        let root = Path::new("/fake");
+        let path = root.join("package.json");
+        let result = parse_package_json_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+        prop_assert_eq!(reqs[0].tool.as_str(), "node");
+        prop_assert_eq!(reqs[0].constraint.as_deref(), Some(constraint.as_str()));
+    }
+
+    /// package.json handles packageManager field
+    #[test]
+    fn package_json_package_manager(
+        pm in "(npm|yarn|pnpm)",
+        major in 1u32..20,
+        minor in 0u32..30,
+        patch in 0u32..30,
+    ) {
+        let version = format!("{}.{}.{}", major, minor, patch);
+        let pm_field = format!("{}@{}", pm, version);
+        let content = format!(r#"{{"packageManager": "{}"}}"#, pm_field);
+        let root = Path::new("/fake");
+        let path = root.join("package.json");
+        let result = parse_package_json_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+        prop_assert_eq!(reqs[0].tool.as_str(), pm.as_str());
+        prop_assert_eq!(reqs[0].constraint.as_deref(), Some(version.as_str()));
+    }
+
+    /// package.json handles packageManager with hash suffix
+    #[test]
+    fn package_json_package_manager_with_hash(
+        pm in "(npm|yarn|pnpm)",
+        major in 1u32..20,
+        minor in 0u32..30,
+        patch in 0u32..30,
+        hash in "[0-9a-f]{16}",
+    ) {
+        let version = format!("{}.{}.{}", major, minor, patch);
+        let pm_field = format!("{}@{}+sha256.{}", pm, version, hash);
+        let content = format!(r#"{{"packageManager": "{}"}}"#, pm_field);
+        let root = Path::new("/fake");
+        let path = root.join("package.json");
+        let result = parse_package_json_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+        // Hash should be stripped from version
+        prop_assert_eq!(reqs[0].constraint.as_deref(), Some(version.as_str()));
+    }
+
+    /// package.json with both engines and packageManager
+    #[test]
+    fn package_json_both_engines_and_pm(
+        node_major in 12u32..22,
+        pm in "(npm|yarn|pnpm)",
+        pm_version in "[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{1,2}",
+    ) {
+        let constraint = format!(">={}", node_major);
+        let pm_field = format!("{}@{}", pm, pm_version);
+        let content = format!(
+            r#"{{"engines": {{"node": "{}"}}, "packageManager": "{}"}}"#,
+            constraint, pm_field
+        );
+        let root = Path::new("/fake");
+        let path = root.join("package.json");
+        let result = parse_package_json_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 2);
+        prop_assert!(reqs.iter().any(|r| r.tool == "node"));
+        prop_assert!(reqs.iter().any(|r| r.tool == pm));
+    }
+
+    /// package.json empty object returns no requirements
+    #[test]
+    fn package_json_empty_object(_dummy in 0..1i32) {
+        let root = Path::new("/fake");
+        let path = root.join("package.json");
+        let result = parse_package_json_str(root, &path, "{}");
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert!(reqs.is_empty());
+    }
+
+    /// package.json with no relevant fields returns no requirements
+    #[test]
+    fn package_json_no_relevant_fields(
+        name in "[a-z][a-z0-9-]{2,20}",
+        version in "[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{1,2}",
+    ) {
+        let content = format!(r#"{{"name": "{}", "version": "{}"}}"#, name, version);
+        let root = Path::new("/fake");
+        let path = root.join("package.json");
+        let result = parse_package_json_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert!(reqs.is_empty());
+    }
+
+    /// package.json handles semver ranges
+    #[test]
+    fn package_json_semver_ranges(
+        op in "(>=|<=|>|<|\\^|~)",
+        major in 12u32..22,
+        minor in 0u32..30,
+        patch in 0u32..30,
+    ) {
+        let constraint = format!("{}{}.{}.{}", op, major, minor, patch);
+        let content = format!(r#"{{"engines": {{"node": "{}"}}}}"#, constraint);
+        let root = Path::new("/fake");
+        let path = root.join("package.json");
+        let result = parse_package_json_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+        prop_assert_eq!(reqs[0].constraint.as_deref(), Some(constraint.as_str()));
+    }
+}
+
+// =============================================================================
+// go.mod Property Tests
+// =============================================================================
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(1000))]
+
+    /// go.mod parser never panics on arbitrary input
+    #[test]
+    fn go_mod_never_panics(s in ".*") {
+        let root = Path::new("/fake");
+        let path = root.join("go.mod");
+        let _ = parse_go_mod_str(root, &path, &s);
+    }
+
+    /// go.mod parser handles valid go directive with major.minor version
+    #[test]
+    fn go_mod_valid_major_minor(
+        major in 1u32..2,
+        minor in 0u32..50,
+    ) {
+        let content = format!("module example.com/mymod\n\ngo {}.{}", major, minor);
+        let root = Path::new("/fake");
+        let path = root.join("go.mod");
+        let result = parse_go_mod_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+        prop_assert_eq!(reqs[0].tool.as_str(), "go");
+        let expected = format!(">={}.{}", major, minor);
+        prop_assert_eq!(reqs[0].constraint.as_deref(), Some(expected.as_str()));
+    }
+
+    /// go.mod parser handles valid go directive with major.minor.patch version
+    #[test]
+    fn go_mod_valid_major_minor_patch(
+        major in 1u32..2,
+        minor in 0u32..50,
+        patch in 0u32..20,
+    ) {
+        let content = format!("module example.com/mymod\n\ngo {}.{}.{}", major, minor, patch);
+        let root = Path::new("/fake");
+        let path = root.join("go.mod");
+        let result = parse_go_mod_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+        let expected = format!(">={}.{}.{}", major, minor, patch);
+        prop_assert_eq!(reqs[0].constraint.as_deref(), Some(expected.as_str()));
+    }
+
+    /// go.mod parser handles whitespace around go directive
+    #[test]
+    fn go_mod_whitespace_tolerance(
+        leading_ws in "[ \t]{0,5}",
+        trailing_ws in "[ \t]{0,5}",
+        major in 1u32..2,
+        minor in 10u32..30,
+    ) {
+        let content = format!("module example.com/mymod\n\n{}go {}.{}{}", leading_ws, major, minor, trailing_ws);
+        let root = Path::new("/fake");
+        let path = root.join("go.mod");
+        let result = parse_go_mod_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+    }
+
+    /// go.mod parser handles inline comments
+    #[test]
+    fn go_mod_inline_comments(
+        major in 1u32..2,
+        minor in 10u32..30,
+        comment in "[a-z ]{0,30}",
+    ) {
+        let content = format!("module example.com/mymod\n\ngo {}.{} // {}", major, minor, comment);
+        let root = Path::new("/fake");
+        let path = root.join("go.mod");
+        let result = parse_go_mod_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+        let expected = format!(">={}.{}", major, minor);
+        prop_assert_eq!(reqs[0].constraint.as_deref(), Some(expected.as_str()));
+    }
+
+    /// go.mod parser handles leading comments
+    #[test]
+    fn go_mod_leading_comments(
+        comment in "[a-z ]{0,30}",
+        major in 1u32..2,
+        minor in 10u32..30,
+    ) {
+        let content = format!("// {}\nmodule example.com/mymod\n\ngo {}.{}", comment, major, minor);
+        let root = Path::new("/fake");
+        let path = root.join("go.mod");
+        let result = parse_go_mod_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+    }
+
+    /// go.mod parser handles go directive at start of file
+    #[test]
+    fn go_mod_directive_at_start(
+        major in 1u32..2,
+        minor in 10u32..30,
+    ) {
+        let content = format!("go {}.{}\nmodule example.com/mymod", major, minor);
+        let root = Path::new("/fake");
+        let path = root.join("go.mod");
+        let result = parse_go_mod_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+    }
+
+    /// go.mod parser handles blank lines
+    #[test]
+    fn go_mod_blank_lines(
+        blank_count in 0usize..5,
+        major in 1u32..2,
+        minor in 10u32..30,
+    ) {
+        let blanks = "\n".repeat(blank_count);
+        let content = format!("{}module example.com/mymod{}\ngo {}.{}\n{}", blanks, blanks, major, minor, blanks);
+        let root = Path::new("/fake");
+        let path = root.join("go.mod");
+        let result = parse_go_mod_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+    }
+
+    /// go.mod parser returns error for missing go directive
+    #[test]
+    fn go_mod_missing_directive(
+        module_name in "[a-z][a-z0-9/.-]{5,30}",
+    ) {
+        let content = format!("module {}\n\nrequire (\n    example.com/pkg v1.0.0\n)", module_name);
+        let root = Path::new("/fake");
+        let path = root.join("go.mod");
+        let result = parse_go_mod_str(root, &path, &content);
+        prop_assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        prop_assert!(err.contains("missing go directive"));
+    }
+
+    /// go.mod parser returns error for empty go directive
+    #[test]
+    fn go_mod_empty_version(_dummy in 0..1i32) {
+        let content = "module example.com/mymod\n\ngo \n";
+        let root = Path::new("/fake");
+        let path = root.join("go.mod");
+        let result = parse_go_mod_str(root, &path, content);
+        prop_assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        prop_assert!(err.contains("no version"));
+    }
+
+    /// go.mod parser returns error for invalid version format
+    #[test]
+    fn go_mod_invalid_version_format(
+        invalid in "[a-z]{3,10}",
+    ) {
+        let content = format!("module example.com/mymod\n\ngo {}", invalid);
+        let root = Path::new("/fake");
+        let path = root.join("go.mod");
+        let result = parse_go_mod_str(root, &path, &content);
+        prop_assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        prop_assert!(err.contains("invalid go version format"));
+    }
+
+    /// go.mod parser returns error for version with too many parts
+    #[test]
+    fn go_mod_version_too_many_parts(
+        major in 1u32..2,
+        minor in 10u32..30,
+        patch in 0u32..10,
+        extra in 0u32..10,
+    ) {
+        let content = format!("module example.com/mymod\n\ngo {}.{}.{}.{}", major, minor, patch, extra);
+        let root = Path::new("/fake");
+        let path = root.join("go.mod");
+        let result = parse_go_mod_str(root, &path, &content);
+        prop_assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        prop_assert!(err.contains("invalid go version format"));
+    }
+
+    /// go.mod parser handles complex go.mod files with require/replace/exclude
+    #[test]
+    fn go_mod_complex_file(
+        major in 1u32..2,
+        minor in 10u32..30,
+        dep_name in "[a-z]{3,8}",
+    ) {
+        let content = format!(
+            "module example.com/mymod\n\ngo {}.{}\n\nrequire (\n    github.com/{}/pkg v1.0.0\n)\n\nreplace github.com/old => github.com/new v1.0.0\n",
+            major, minor, dep_name
+        );
+        let root = Path::new("/fake");
+        let path = root.join("go.mod");
+        let result = parse_go_mod_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+    }
+
+    /// go.mod parser handles CRLF line endings
+    #[test]
+    fn go_mod_crlf_line_endings(
+        major in 1u32..2,
+        minor in 10u32..30,
+    ) {
+        let content = format!("module example.com/mymod\r\n\r\ngo {}.{}\r\n", major, minor);
+        let root = Path::new("/fake");
+        let path = root.join("go.mod");
+        let result = parse_go_mod_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+    }
+
+    /// go.mod parser sets correct source kind
+    #[test]
+    fn go_mod_source_kind(
+        major in 1u32..2,
+        minor in 10u32..30,
+    ) {
+        let content = format!("module example.com/mymod\n\ngo {}.{}", major, minor);
+        let root = Path::new("/fake");
+        let path = root.join("go.mod");
+        let result = parse_go_mod_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert!(matches!(reqs[0].source.kind, env_check_types::SourceKind::GoMod));
+    }
+
+    /// go.mod parser marks requirements as required
+    #[test]
+    fn go_mod_required_flag(
+        major in 1u32..2,
+        minor in 10u32..30,
+    ) {
+        let content = format!("module example.com/mymod\n\ngo {}.{}", major, minor);
+        let root = Path::new("/fake");
+        let path = root.join("go.mod");
+        let result = parse_go_mod_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert!(reqs[0].required);
+    }
+
+    /// go.mod parser stores relative path correctly
+    #[test]
+    fn go_mod_relative_path(
+        major in 1u32..2,
+        minor in 10u32..30,
+    ) {
+        let content = format!("module example.com/mymod\n\ngo {}.{}", major, minor);
+        let root = Path::new("/fake/project");
+        let path = root.join("go.mod");
+        let result = parse_go_mod_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs[0].source.path.as_str(), "go.mod");
     }
 }

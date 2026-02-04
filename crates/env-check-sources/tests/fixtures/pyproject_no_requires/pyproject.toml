@@ -1,0 +1,6 @@
+[project]
+name = "myproject"
+version = "1.0.0"
+
+[tool.pytest]
+testpaths = ["tests"]

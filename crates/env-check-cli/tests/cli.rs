@@ -12,20 +12,26 @@ fn fixtures_dir() -> PathBuf {
         .join("fixtures")
 }
 
+/// Create a Command for the env-check binary.
+/// Uses CARGO_BIN_EXE_env-check which is set by cargo test automatically.
+fn env_check_cmd() -> Command {
+    Command::new(env!("CARGO_BIN_EXE_env-check"))
+}
+
 // =============================================================================
 // BASIC CLI FUNCTIONALITY
 // =============================================================================
 
 #[test]
 fn help_works() {
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("--help");
     cmd.assert().success().stdout(predicate::str::contains("env-check"));
 }
 
 #[test]
 fn version_works() {
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("--version");
     cmd.assert()
         .success()
@@ -34,7 +40,7 @@ fn version_works() {
 
 #[test]
 fn check_subcommand_help() {
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check").arg("--help");
     cmd.assert()
         .success()
@@ -45,7 +51,7 @@ fn check_subcommand_help() {
 
 #[test]
 fn md_subcommand_help() {
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("md").arg("--help");
     cmd.assert()
         .success()
@@ -54,7 +60,7 @@ fn md_subcommand_help() {
 
 #[test]
 fn explain_subcommand_help() {
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("explain").arg("--help");
     cmd.assert().success();
 }
@@ -64,7 +70,7 @@ fn check_no_sources_exits_zero() {
     let tmp = tempdir().unwrap();
     let out_path = tmp.path().join("report.json");
 
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--root")
         .arg("tests/fixtures/no_sources")
@@ -84,7 +90,7 @@ fn check_missing_tool_team_profile_exits_two() {
     let tmp = tempdir().unwrap();
     let out_path = tmp.path().join("report.json");
 
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--root")
         .arg("tests/fixtures/missing_tool")
@@ -105,7 +111,7 @@ fn check_missing_tool_oss_profile_exits_zero() {
     let tmp = tempdir().unwrap();
     let out_path = tmp.path().join("report.json");
 
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--root")
         .arg("tests/fixtures/missing_tool")
@@ -127,7 +133,7 @@ fn check_writes_markdown_when_requested() {
     let out_path = tmp.path().join("report.json");
     let md_path = tmp.path().join("comment.md");
 
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--root")
         .arg("tests/fixtures/no_sources")
@@ -150,7 +156,7 @@ fn md_command_renders_from_report() {
     let md_path = tmp.path().join("output.md");
 
     // First create a report
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--root")
         .arg("tests/fixtures/no_sources")
@@ -159,7 +165,7 @@ fn md_command_renders_from_report() {
     cmd.assert().success();
 
     // Then render markdown from it
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("md")
         .arg("--report")
         .arg(&report_path)
@@ -171,8 +177,79 @@ fn md_command_renders_from_report() {
 }
 
 #[test]
+fn md_command_with_positional_argument() {
+    let tmp = tempdir().unwrap();
+    let report_path = tmp.path().join("report.json");
+    let md_path = tmp.path().join("output.md");
+
+    // First create a report
+    let mut cmd = env_check_cmd();
+    cmd.arg("check")
+        .arg("--root")
+        .arg("tests/fixtures/no_sources")
+        .arg("--out")
+        .arg(&report_path);
+    cmd.assert().success();
+
+    // Then render markdown using positional argument (not --report flag)
+    let mut cmd = env_check_cmd();
+    cmd.arg("md")
+        .arg(&report_path)  // positional argument
+        .arg("--out")
+        .arg(&md_path);
+    cmd.assert().success();
+
+    assert!(md_path.exists());
+    let md = fs::read_to_string(&md_path).unwrap();
+    assert!(md.contains("## env-check:"));
+}
+
+#[test]
+fn md_command_positional_takes_precedence() {
+    let tmp = tempdir().unwrap();
+    let report_path = tmp.path().join("report.json");
+    let md_path = tmp.path().join("output.md");
+    let fake_path = tmp.path().join("nonexistent.json");
+
+    // First create a report
+    let mut cmd = env_check_cmd();
+    cmd.arg("check")
+        .arg("--root")
+        .arg("tests/fixtures/no_sources")
+        .arg("--out")
+        .arg(&report_path);
+    cmd.assert().success();
+
+    // Positional argument should take precedence over --report flag
+    // Here we provide a valid positional and invalid --report; should succeed
+    let mut cmd = env_check_cmd();
+    cmd.arg("md")
+        .arg(&report_path)  // valid positional argument
+        .arg("--report")
+        .arg(&fake_path)    // invalid flag argument (would fail if used)
+        .arg("--out")
+        .arg(&md_path);
+    cmd.assert().success();
+
+    assert!(md_path.exists());
+}
+
+#[test]
+fn md_command_requires_report_argument() {
+    let tmp = tempdir().unwrap();
+    let md_path = tmp.path().join("output.md");
+
+    // md command without any report argument should fail
+    let mut cmd = env_check_cmd();
+    cmd.arg("md")
+        .arg("--out")
+        .arg(&md_path);
+    cmd.assert().failure();
+}
+
+#[test]
 fn explain_known_code() {
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("explain").arg("env.missing_tool");
     cmd.assert()
         .success()
@@ -181,7 +258,7 @@ fn explain_known_code() {
 
 #[test]
 fn explain_unknown_code() {
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("explain").arg("unknown.code.here");
     cmd.assert()
         .success()
@@ -190,7 +267,7 @@ fn explain_unknown_code() {
 
 #[test]
 fn invalid_profile_fails() {
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--profile")
         .arg("invalid");
@@ -199,7 +276,7 @@ fn invalid_profile_fails() {
 
 #[test]
 fn invalid_fail_on_fails() {
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--fail-on")
         .arg("invalid");
@@ -215,7 +292,7 @@ fn exit_code_zero_for_pass_status() {
     let tmp = tempdir().unwrap();
     let out_path = tmp.path().join("report.json");
 
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--root")
         .arg(fixtures_dir().join("no_sources"))
@@ -240,7 +317,7 @@ fn exit_code_zero_for_warn_status_oss_profile() {
     let tmp = tempdir().unwrap();
     let out_path = tmp.path().join("report.json");
 
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--root")
         .arg(fixtures_dir().join("missing_tool"))
@@ -261,7 +338,7 @@ fn exit_code_two_for_fail_status_team_profile() {
     let tmp = tempdir().unwrap();
     let out_path = tmp.path().join("report.json");
 
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--root")
         .arg(fixtures_dir().join("missing_tool"))
@@ -282,7 +359,7 @@ fn exit_code_two_for_strict_profile_missing_tool() {
     let tmp = tempdir().unwrap();
     let out_path = tmp.path().join("report.json");
 
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--root")
         .arg(fixtures_dir().join("missing_tool"))
@@ -303,7 +380,7 @@ fn exit_code_zero_for_skip_status() {
     let tmp = tempdir().unwrap();
     let out_path = tmp.path().join("report.json");
 
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--root")
         .arg(fixtures_dir().join("no_sources"))
@@ -328,7 +405,7 @@ fn report_json_is_created_at_specified_path() {
     let tmp = tempdir().unwrap();
     let custom_path = tmp.path().join("custom").join("path").join("report.json");
 
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--root")
         .arg(fixtures_dir().join("no_sources"))
@@ -345,7 +422,7 @@ fn report_json_has_valid_structure() {
     let tmp = tempdir().unwrap();
     let out_path = tmp.path().join("report.json");
 
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--root")
         .arg(fixtures_dir().join("no_sources"))
@@ -387,7 +464,7 @@ fn report_json_contains_findings_for_missing_tool() {
     let tmp = tempdir().unwrap();
     let out_path = tmp.path().join("report.json");
 
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--root")
         .arg(fixtures_dir().join("missing_tool"))
@@ -425,7 +502,7 @@ fn markdown_file_is_created_when_md_flag_used() {
     let out_path = tmp.path().join("report.json");
     let md_path = tmp.path().join("comment.md");
 
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--root")
         .arg(fixtures_dir().join("no_sources"))
@@ -450,7 +527,7 @@ fn markdown_not_created_without_md_flag() {
     let out_path = tmp.path().join("report.json");
     let md_path = tmp.path().join("comment.md");
 
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--root")
         .arg(fixtures_dir().join("no_sources"))
@@ -469,7 +546,7 @@ fn md_command_creates_markdown_from_existing_report() {
     let md_path = tmp.path().join("output.md");
 
     // First create a report
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--root")
         .arg(fixtures_dir().join("no_sources"))
@@ -478,7 +555,7 @@ fn md_command_creates_markdown_from_existing_report() {
     cmd.assert().success();
 
     // Then render markdown from it
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("md")
         .arg("--report")
         .arg(&report_path)
@@ -503,7 +580,7 @@ fn profile_oss_treats_missing_tool_as_warn() {
     let tmp = tempdir().unwrap();
     let out_path = tmp.path().join("report.json");
 
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--root")
         .arg(fixtures_dir().join("missing_tool"))
@@ -525,7 +602,7 @@ fn profile_team_treats_missing_tool_as_error() {
     let tmp = tempdir().unwrap();
     let out_path = tmp.path().join("report.json");
 
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--root")
         .arg(fixtures_dir().join("missing_tool"))
@@ -547,7 +624,7 @@ fn profile_strict_treats_missing_tool_as_error() {
     let tmp = tempdir().unwrap();
     let out_path = tmp.path().join("report.json");
 
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--root")
         .arg(fixtures_dir().join("missing_tool"))
@@ -570,7 +647,7 @@ fn profile_default_is_oss() {
     let out_path = tmp.path().join("report.json");
 
     // Run without --profile flag
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--root")
         .arg(fixtures_dir().join("missing_tool"))
@@ -598,7 +675,7 @@ fn fail_on_warn_exits_two_for_warnings() {
     let tmp = tempdir().unwrap();
     let out_path = tmp.path().join("report.json");
 
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--root")
         .arg(fixtures_dir().join("missing_tool"))
@@ -618,7 +695,7 @@ fn fail_on_never_exits_zero_even_for_errors() {
     let tmp = tempdir().unwrap();
     let out_path = tmp.path().join("report.json");
 
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--root")
         .arg(fixtures_dir().join("missing_tool"))
@@ -639,7 +716,7 @@ fn fail_on_error_is_default() {
     let out_path = tmp.path().join("report.json");
 
     // OSS profile with warnings exits 0 (fail-on error is default)
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--root")
         .arg(fixtures_dir().join("missing_tool"))
@@ -654,7 +731,7 @@ fn fail_on_error_is_default() {
     let tmp2 = tempdir().unwrap();
     let out_path2 = tmp2.path().join("report.json");
 
-    let mut cmd2 = Command::cargo_bin("env-check").unwrap();
+    let mut cmd2 = env_check_cmd();
     cmd2.arg("check")
         .arg("--root")
         .arg(fixtures_dir().join("missing_tool"))
@@ -672,7 +749,7 @@ fn fail_on_error_is_default() {
 
 #[test]
 fn invalid_profile_argument_fails_with_error() {
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check").arg("--profile").arg("invalid_profile");
 
     cmd.assert()
@@ -682,7 +759,7 @@ fn invalid_profile_argument_fails_with_error() {
 
 #[test]
 fn invalid_fail_on_argument_fails_with_error() {
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check").arg("--fail-on").arg("invalid_value");
 
     cmd.assert()
@@ -699,7 +776,7 @@ fn nonexistent_root_directory_skips() {
     let out_path = tmp.path().join("report.json");
     let nonexistent = tmp.path().join("nonexistent_subdir_12345");
 
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--root")
         .arg(&nonexistent)
@@ -726,7 +803,7 @@ fn malformed_tool_versions_handles_gracefully() {
     let tmp = tempdir().unwrap();
     let out_path = tmp.path().join("report.json");
 
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--root")
         .arg(fixtures_dir().join("malformed_tool_versions"))
@@ -757,7 +834,7 @@ fn md_command_with_nonexistent_report_fails() {
     let tmp = tempdir().unwrap();
     let md_path = tmp.path().join("output.md");
 
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("md")
         .arg("--report")
         .arg("/nonexistent/report.json")
@@ -776,7 +853,7 @@ fn md_command_with_invalid_json_report_fails() {
     // Write invalid JSON
     fs::write(&report_path, "{ this is not valid json }").unwrap();
 
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("md")
         .arg("--report")
         .arg(&report_path)
@@ -802,7 +879,7 @@ fn explain_all_known_codes() {
     ];
 
     for (code, expected_word) in known_codes {
-        let mut cmd = Command::cargo_bin("env-check").unwrap();
+        let mut cmd = env_check_cmd();
         cmd.arg("explain").arg(code);
         cmd.assert()
             .success()
@@ -812,7 +889,7 @@ fn explain_all_known_codes() {
 
 #[test]
 fn explain_unknown_code_returns_unknown_message() {
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("explain").arg("completely.unknown.code.xyz");
     cmd.assert()
         .success()
@@ -828,7 +905,7 @@ fn check_prints_summary_to_stderr() {
     let tmp = tempdir().unwrap();
     let out_path = tmp.path().join("report.json");
 
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--root")
         .arg(fixtures_dir().join("no_sources"))
@@ -852,7 +929,7 @@ fn report_is_deterministic_for_same_input() {
     let out_path2 = tmp2.path().join("report.json");
 
     // Run check twice with same inputs
-    let mut cmd1 = Command::cargo_bin("env-check").unwrap();
+    let mut cmd1 = env_check_cmd();
     cmd1.arg("check")
         .arg("--root")
         .arg(fixtures_dir().join("missing_tool"))
@@ -862,7 +939,7 @@ fn report_is_deterministic_for_same_input() {
         .arg(&out_path1);
     cmd1.assert().success();
 
-    let mut cmd2 = Command::cargo_bin("env-check").unwrap();
+    let mut cmd2 = env_check_cmd();
     cmd2.arg("check")
         .arg("--root")
         .arg(fixtures_dir().join("missing_tool"))
@@ -893,7 +970,7 @@ fn valid_tools_fixture_produces_report() {
     let tmp = tempdir().unwrap();
     let out_path = tmp.path().join("report.json");
 
-    let mut cmd = Command::cargo_bin("env-check").unwrap();
+    let mut cmd = env_check_cmd();
     cmd.arg("check")
         .arg("--root")
         .arg(fixtures_dir().join("valid_tools"))
@@ -912,4 +989,208 @@ fn valid_tools_fixture_produces_report() {
     let content = fs::read_to_string(&out_path).unwrap();
     let json: Value = serde_json::from_str(&content).expect("Report should be valid JSON");
     assert!(json.get("verdict").is_some(), "Report should have verdict");
+}
+
+// =============================================================================
+// DEBUG LOGGING TESTS
+// =============================================================================
+
+#[test]
+fn debug_flag_creates_raw_log() {
+    let tmp = tempdir().unwrap();
+    let out_path = tmp.path().join("report.json");
+    let artifacts_dir = tmp.path().join("artifacts").join("env-check");
+
+    let mut cmd = env_check_cmd();
+    cmd.arg("check")
+        .arg("--root")
+        .arg(fixtures_dir().join("valid_tools"))
+        .arg("--out")
+        .arg(&out_path)
+        .arg("--debug")
+        .current_dir(tmp.path());
+
+    cmd.assert().success();
+
+    // Verify raw.log was created at default location
+    let log_path = artifacts_dir.join("raw.log");
+    assert!(
+        log_path.exists(),
+        "raw.log should be created when --debug flag is used"
+    );
+
+    // Verify log has content
+    let log_content = fs::read_to_string(&log_path).unwrap();
+    assert!(
+        log_content.contains("# env-check probe debug log"),
+        "Log should have header"
+    );
+}
+
+#[test]
+fn log_file_flag_creates_custom_log() {
+    let tmp = tempdir().unwrap();
+    let out_path = tmp.path().join("report.json");
+    let custom_log = tmp.path().join("custom").join("my_debug.log");
+
+    let mut cmd = env_check_cmd();
+    cmd.arg("check")
+        .arg("--root")
+        .arg(fixtures_dir().join("valid_tools"))
+        .arg("--out")
+        .arg(&out_path)
+        .arg("--log-file")
+        .arg(&custom_log);
+
+    cmd.assert().success();
+
+    // Verify log was created at custom path
+    assert!(
+        custom_log.exists(),
+        "Log should be created at custom path specified by --log-file"
+    );
+
+    // Verify log has content
+    let log_content = fs::read_to_string(&custom_log).unwrap();
+    assert!(
+        log_content.contains("# env-check probe debug log"),
+        "Log should have header"
+    );
+}
+
+#[test]
+fn no_debug_flag_does_not_create_log() {
+    let tmp = tempdir().unwrap();
+    let out_path = tmp.path().join("report.json");
+    let artifacts_dir = tmp.path().join("artifacts").join("env-check");
+
+    let mut cmd = env_check_cmd();
+    cmd.arg("check")
+        .arg("--root")
+        .arg(fixtures_dir().join("valid_tools"))
+        .arg("--out")
+        .arg(&out_path)
+        .current_dir(tmp.path());
+
+    cmd.assert().success();
+
+    // Verify raw.log was NOT created
+    let log_path = artifacts_dir.join("raw.log");
+    assert!(
+        !log_path.exists(),
+        "raw.log should NOT be created when --debug flag is not used"
+    );
+}
+
+#[test]
+fn env_var_creates_log() {
+    let tmp = tempdir().unwrap();
+    let out_path = tmp.path().join("report.json");
+    let env_log = tmp.path().join("env_debug.log");
+
+    let mut cmd = env_check_cmd();
+    cmd.arg("check")
+        .arg("--root")
+        .arg(fixtures_dir().join("valid_tools"))
+        .arg("--out")
+        .arg(&out_path)
+        .env("ENV_CHECK_DEBUG_LOG", &env_log);
+
+    cmd.assert().success();
+
+    // Verify log was created at path specified by env var
+    assert!(
+        env_log.exists(),
+        "Log should be created at path specified by ENV_CHECK_DEBUG_LOG"
+    );
+}
+
+#[test]
+fn debug_log_contains_probe_info() {
+    let tmp = tempdir().unwrap();
+    let out_path = tmp.path().join("report.json");
+    let log_path = tmp.path().join("debug.log");
+
+    let mut cmd = env_check_cmd();
+    cmd.arg("check")
+        .arg("--root")
+        .arg(fixtures_dir().join("valid_tools"))
+        .arg("--out")
+        .arg(&out_path)
+        .arg("--log-file")
+        .arg(&log_path);
+
+    cmd.assert().success();
+
+    // Verify log contains probe information
+    let log_content = fs::read_to_string(&log_path).unwrap();
+
+    // Should have header
+    assert!(
+        log_content.contains("# env-check probe debug log"),
+        "Log should have header"
+    );
+    assert!(
+        log_content.contains("# started:"),
+        "Log should have timestamp"
+    );
+}
+
+#[test]
+fn debug_log_does_not_affect_report_determinism() {
+    let tmp1 = tempdir().unwrap();
+    let tmp2 = tempdir().unwrap();
+    let out_path1 = tmp1.path().join("report.json");
+    let out_path2 = tmp2.path().join("report.json");
+
+    // Run with debug logging
+    let mut cmd1 = env_check_cmd();
+    cmd1.arg("check")
+        .arg("--root")
+        .arg(fixtures_dir().join("missing_tool"))
+        .arg("--profile")
+        .arg("oss")
+        .arg("--out")
+        .arg(&out_path1)
+        .arg("--debug")
+        .current_dir(tmp1.path());
+    cmd1.assert().success();
+
+    // Run without debug logging
+    let mut cmd2 = env_check_cmd();
+    cmd2.arg("check")
+        .arg("--root")
+        .arg(fixtures_dir().join("missing_tool"))
+        .arg("--profile")
+        .arg("oss")
+        .arg("--out")
+        .arg(&out_path2);
+    cmd2.assert().success();
+
+    let content1 = fs::read_to_string(&out_path1).unwrap();
+    let content2 = fs::read_to_string(&out_path2).unwrap();
+
+    let json1: Value = serde_json::from_str(&content1).unwrap();
+    let json2: Value = serde_json::from_str(&content2).unwrap();
+
+    // Verdicts and findings should be identical regardless of debug logging
+    assert_eq!(
+        json1["verdict"], json2["verdict"],
+        "Verdict should be the same with or without debug logging"
+    );
+    assert_eq!(
+        json1["findings"], json2["findings"],
+        "Findings should be the same with or without debug logging"
+    );
+}
+
+#[test]
+fn check_help_shows_debug_options() {
+    let mut cmd = env_check_cmd();
+    cmd.arg("check").arg("--help");
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("--debug"))
+        .stdout(predicate::str::contains("--log-file"))
+        .stdout(predicate::str::contains("ENV_CHECK_DEBUG_LOG"));
 }

@@ -81,6 +81,14 @@ pub struct CiMeta {
     pub job: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub run_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repository: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub git_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sha: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -97,6 +105,8 @@ pub struct GitMeta {
     pub head_sha: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub merge_base: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pr_number: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -170,6 +180,12 @@ pub enum SourceKind {
     MiseToml,
     RustToolchain,
     HashManifest,
+    NodeVersion,
+    Nvmrc,
+    PackageJson,
+    PythonVersion,
+    PyprojectToml,
+    GoMod,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

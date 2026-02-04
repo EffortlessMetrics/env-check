@@ -44,3 +44,45 @@ path = "fuzz_targets/parse_hash_manifest.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "fuzz_node_version"
+path = "fuzz_targets/fuzz_node_version.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_nvmrc"
+path = "fuzz_targets/fuzz_nvmrc.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_package_json"
+path = "fuzz_targets/fuzz_package_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_python_version"
+path = "fuzz_targets/fuzz_python_version.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_pyproject_toml"
+path = "fuzz_targets/fuzz_pyproject_toml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_go_mod"
+path = "fuzz_targets/fuzz_go_mod.rs"
+test = false
+doc = false
+bench = false

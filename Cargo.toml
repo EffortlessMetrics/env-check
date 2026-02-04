@@ -14,11 +14,22 @@ members = [
 [workspace.package]
 edition = "2021"
 license = "MIT"
-repository = "https://example.invalid/effortless/env-check"
-rust-version = "1.78"
-authors = ["Effortless Metrics <dev@example.invalid>"]
+repository = "https://github.com/EffortlessMetrics/env-check"
+homepage = "https://github.com/EffortlessMetrics/env-check"
+rust-version = "1.92"
+authors = ["Effortless Metrics <dev@effortlessmetrics.com>"]
+keywords = ["ci", "devops", "toolchain", "version-check", "validation"]
+categories = ["development-tools", "command-line-utilities"]
 
 [workspace.dependencies]
+# Internal crates
+env-check-types = { version = "0.1.0", path = "crates/env-check-types" }
+env-check-sources = { version = "0.1.0", path = "crates/env-check-sources" }
+env-check-probe = { version = "0.1.0", path = "crates/env-check-probe" }
+env-check-domain = { version = "0.1.0", path = "crates/env-check-domain" }
+env-check-render = { version = "0.1.0", path = "crates/env-check-render" }
+env-check-app = { version = "0.1.0", path = "crates/env-check-app" }
+
 # Core
 anyhow = "1"
 thiserror = "1"
@@ -26,7 +37,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # CLI / UX
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 
 # Parsing / data
 toml = "0.8"

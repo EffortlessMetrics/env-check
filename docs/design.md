@@ -119,36 +119,72 @@ This keeps probing logic testable without depending on the host environment.
 
 ### Source discovery
 
-`env-check-sources::discover(root) -> Vec<SourceRef>`
+`env-check-sources::parse_all(root) -> ParsedSources`
+
+Returns discovered sources, parsed requirements, and any parse error findings.
 
 Rules:
 
-- deterministic order
+- deterministic order (sorted paths)
 - include only known sources unless configured otherwise
 
-### `.tool-versions` parsing
+### Supported sources
 
+#### Version managers
+
+**`.tool-versions` (asdf)**
 - ignore blank lines and comments
 - parse `tool version` pairs
 - normalize common aliases (`nodejs` → `node`, etc.)
 
-### `.mise.toml` parsing
-
+**`.mise.toml`**
 - read `[tools]` table
 - interpret values:
   - `"1.2.3"` as exact constraint
-  - `"latest"` or `"system"` treated as “present only” (no strict version constraint)
+  - `"latest"` or `"system"` treated as "present only" (no strict version constraint)
   - arrays and nested tables are preserved in `data` (future)
 
-### `rust-toolchain.toml` parsing
+#### Rust
 
+**`rust-toolchain.toml` / `rust-toolchain`**
 - read `toolchain.channel` as a rust toolchain requirement
 - record components/targets as additional requirements (optional in v0.1; can be warn-only)
 
-### Hash manifests
+#### Node.js
 
-- parse lines like:
-  - `<sha256>  <relative_path>`
+**`.node-version`**
+- single line with Node.js version
+- supports optional `v` prefix
+
+**`.nvmrc`**
+- single line with Node.js version
+- supports optional `v` prefix and LTS aliases
+
+**`package.json`**
+- extract `engines.node` and `engines.npm` constraints
+- supports semver range syntax
+
+#### Python
+
+**`.python-version`**
+- single line with Python version
+- supports pyenv format (version per line, optional comments)
+- handles pypy and other implementations
+
+**`pyproject.toml`**
+- extract `project.requires-python` constraint
+- supports PEP 440 version specifiers
+
+#### Go
+
+**`go.mod`**
+- extract `go` directive version
+- extract `toolchain` directive if present (Go 1.21+)
+
+#### Binary verification
+
+**Hash manifests** (default `scripts/tools.sha256`)
+- parse lines like: `<sha256>  <relative_path>`
 - produce requirements with hash specs for those paths
 - hash verification is only performed for files under the repo root (no arbitrary paths)
 
@@ -224,4 +260,5 @@ The code should include a `schema_id` constant and a schema version string in th
 - **Golden fixtures (insta):** stable receipts and markdown outputs
 - **Proptest:** version parsing, path normalization, `.tool-versions` parsing
 - **Fuzzing (cargo fuzz):** parsers never panic on arbitrary bytes
+  - Targets: `parse_tool_versions`, `parse_mise_toml`, `parse_rust_toolchain`, `parse_hash_manifest`, `fuzz_node_version`, `fuzz_nvmrc`, `fuzz_package_json`, `fuzz_python_version`, `fuzz_pyproject_toml`, `fuzz_go_mod`
 - **Mutation testing (cargo-mutants):** timeboxed, focused on domain evaluation and parsers

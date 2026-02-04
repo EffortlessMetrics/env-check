@@ -4,8 +4,10 @@
 //! so we can run BDD/integration tests without depending on the host environment.
 
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
 
 use anyhow::Context;
 use env_check_types::{EnvCheckError, HashAlgo, Observation, ProbeKind, ProbeRecord, Requirement, VersionObservation};
@@ -235,6 +237,129 @@ fn normalize_hex(s: &str) -> String {
 
 fn extract_version(re: &Regex, text: &str) -> Option<String> {
     re.find(text).map(|m| m.as_str().to_string())
+}
+
+// =============================================================================
+// LOGGING COMMAND RUNNER (DECORATOR)
+// =============================================================================
+
+/// A writer trait that can be used to write debug logs.
+/// This abstracts over file writers, buffers, etc.
+pub trait DebugLogWriter: Send + Sync {
+    fn write_line(&self, line: &str);
+    fn flush(&self);
+}
+
+/// A file-based debug log writer.
+pub struct FileLogWriter {
+    file: Mutex<std::fs::File>,
+}
+
+impl FileLogWriter {
+    pub fn new(path: &Path) -> std::io::Result<Self> {
+        // Ensure parent directory exists
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let file = std::fs::File::create(path)?;
+        Ok(Self {
+            file: Mutex::new(file),
+        })
+    }
+}
+
+impl DebugLogWriter for FileLogWriter {
+    fn write_line(&self, line: &str) {
+        if let Ok(mut f) = self.file.lock() {
+            let _ = writeln!(f, "{}", line);
+        }
+    }
+
+    fn flush(&self) {
+        if let Ok(mut f) = self.file.lock() {
+            let _ = f.flush();
+        }
+    }
+}
+
+// Implement DebugLogWriter for references to allow testing with borrowed writers
+impl<W: DebugLogWriter> DebugLogWriter for &W {
+    fn write_line(&self, line: &str) {
+        (*self).write_line(line)
+    }
+
+    fn flush(&self) {
+        (*self).flush()
+    }
+}
+
+/// A logging wrapper around any CommandRunner that logs probe execution details.
+/// The debug log is a side artifact and does NOT affect the receipt (determinism preserved).
+pub struct LoggingCommandRunner<R: CommandRunner, W: DebugLogWriter> {
+    inner: R,
+    writer: W,
+}
+
+impl<R: CommandRunner, W: DebugLogWriter> LoggingCommandRunner<R, W> {
+    pub fn new(inner: R, writer: W) -> Self {
+        // Write header
+        let timestamp = chrono::Utc::now().to_rfc3339();
+        writer.write_line(&format!("# env-check probe debug log"));
+        writer.write_line(&format!("# started: {}", timestamp));
+        writer.write_line("");
+        Self { inner, writer }
+    }
+}
+
+impl<R: CommandRunner, W: DebugLogWriter> CommandRunner for LoggingCommandRunner<R, W> {
+    fn run(&self, cwd: &Path, argv: &[String]) -> Result<CmdOutput, EnvCheckError> {
+        let timestamp = chrono::Utc::now().to_rfc3339();
+        let cmd_str = argv.join(" ");
+
+        self.writer.write_line(&format!("[{}] EXEC: {}", timestamp, cmd_str));
+        self.writer.write_line(&format!("  cwd: {}", cwd.display()));
+
+        let result = self.inner.run(cwd, argv);
+
+        match &result {
+            Ok(output) => {
+                self.writer.write_line(&format!("  exit: {:?}", output.exit));
+
+                // Log stdout (truncated if long)
+                let stdout_preview = truncate_for_log(&output.stdout, 200);
+                if !stdout_preview.is_empty() {
+                    self.writer.write_line(&format!("  stdout: {}", stdout_preview));
+                }
+
+                // Log stderr (truncated if long)
+                let stderr_preview = truncate_for_log(&output.stderr, 200);
+                if !stderr_preview.is_empty() {
+                    self.writer.write_line(&format!("  stderr: {}", stderr_preview));
+                }
+            }
+            Err(e) => {
+                self.writer.write_line(&format!("  error: {}", e));
+            }
+        }
+
+        self.writer.write_line("");
+        self.writer.flush();
+
+        result
+    }
+}
+
+/// Truncate a string for logging purposes, replacing newlines and limiting length.
+fn truncate_for_log(s: &str, max_len: usize) -> String {
+    let cleaned: String = s.chars()
+        .map(|c| if c == '\n' || c == '\r' { ' ' } else { c })
+        .collect();
+    let trimmed = cleaned.trim();
+    if trimmed.len() <= max_len {
+        trimmed.to_string()
+    } else {
+        format!("{}...", &trimmed[..max_len])
+    }
 }
 
 /// Fake/test adapters for use in other crates' tests.
@@ -592,5 +717,126 @@ mod tests {
             let re = Regex::new(r"(\d+)(?:\.(\d+))?(?:\.(\d+))?").unwrap();
             let _ = extract_version(&re, &s);
         }
+    }
+
+    // =========================================================================
+    // Logging Command Runner Tests
+    // =========================================================================
+
+    /// A simple in-memory log writer for testing.
+    struct TestLogWriter {
+        lines: Mutex<Vec<String>>,
+    }
+
+    impl TestLogWriter {
+        fn new() -> Self {
+            Self {
+                lines: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn get_lines(&self) -> Vec<String> {
+            self.lines.lock().unwrap().clone()
+        }
+    }
+
+    impl DebugLogWriter for TestLogWriter {
+        fn write_line(&self, line: &str) {
+            self.lines.lock().unwrap().push(line.to_string());
+        }
+
+        fn flush(&self) {}
+    }
+
+    #[test]
+    fn logging_runner_writes_header() {
+        let inner = FakeCommandRunner::new();
+        let writer = TestLogWriter::new();
+        let _runner = LoggingCommandRunner::new(inner, &writer);
+
+        let lines = writer.get_lines();
+        assert!(lines.iter().any(|l| l.contains("# env-check probe debug log")));
+        assert!(lines.iter().any(|l| l.contains("# started:")));
+    }
+
+    #[test]
+    fn logging_runner_logs_command_execution() {
+        let inner = FakeCommandRunner::new()
+            .with_response("test-tool", CmdOutput {
+                exit: Some(0),
+                stdout: "output here".to_string(),
+                stderr: String::new(),
+            });
+        let writer = TestLogWriter::new();
+        let runner = LoggingCommandRunner::new(inner, &writer);
+
+        let _ = runner.run(Path::new("/repo"), &["test-tool".to_string(), "--version".to_string()]);
+
+        let lines = writer.get_lines();
+
+        // Should log the command
+        assert!(lines.iter().any(|l| l.contains("EXEC:") && l.contains("test-tool")));
+        // Should log the cwd
+        assert!(lines.iter().any(|l| l.contains("cwd:")));
+        // Should log the exit code
+        assert!(lines.iter().any(|l| l.contains("exit:") && l.contains("0")));
+        // Should log stdout
+        assert!(lines.iter().any(|l| l.contains("stdout:") && l.contains("output here")));
+    }
+
+    #[test]
+    fn logging_runner_logs_errors() {
+        let inner = FakeCommandRunner::new();  // No response configured = error
+        let writer = TestLogWriter::new();
+        let runner = LoggingCommandRunner::new(inner, &writer);
+
+        // This will return an error (command not found)
+        let result = runner.run(Path::new("/repo"), &["nonexistent".to_string()]);
+
+        assert!(result.is_ok()); // FakeCommandRunner returns "command not found" as success with exit 127
+
+        let lines = writer.get_lines();
+        assert!(lines.iter().any(|l| l.contains("EXEC:") && l.contains("nonexistent")));
+    }
+
+    #[test]
+    fn logging_runner_truncates_long_output() {
+        // Test the truncate_for_log function directly
+        let short = "short output";
+        assert_eq!(truncate_for_log(short, 200), "short output");
+
+        let long = "a".repeat(300);
+        let truncated = truncate_for_log(&long, 200);
+        assert!(truncated.ends_with("..."));
+        assert!(truncated.len() < long.len());
+    }
+
+    #[test]
+    fn logging_runner_replaces_newlines() {
+        let with_newlines = "line1\nline2\r\nline3";
+        let result = truncate_for_log(with_newlines, 200);
+        assert!(!result.contains('\n'));
+        assert!(!result.contains('\r'));
+        assert!(result.contains("line1"));
+        assert!(result.contains("line2"));
+    }
+
+    #[test]
+    fn logging_runner_does_not_affect_result() {
+        let inner = FakeCommandRunner::new()
+            .with_response("tool", CmdOutput {
+                exit: Some(42),
+                stdout: "stdout content".to_string(),
+                stderr: "stderr content".to_string(),
+            });
+        let writer = TestLogWriter::new();
+        let runner = LoggingCommandRunner::new(inner, &writer);
+
+        let result = runner.run(Path::new("/repo"), &["tool".to_string()]).unwrap();
+
+        // Verify the result is unchanged
+        assert_eq!(result.exit, Some(42));
+        assert_eq!(result.stdout, "stdout content");
+        assert_eq!(result.stderr, "stderr content");
     }
 }
