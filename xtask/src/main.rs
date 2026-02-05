@@ -24,7 +24,9 @@ fn main() -> anyhow::Result<()> {
 fn print_help() {
     eprintln!("xtask commands:");
     eprintln!("  schema-check   Validate schemas and example receipts");
-    eprintln!("  conform        Run cockpit conformance checks (schema, determinism, survivability)");
+    eprintln!(
+        "  conform        Run cockpit conformance checks (schema, determinism, survivability)"
+    );
     eprintln!("  mutants        Run cargo-mutants on domain crate (requires cargo-mutants)");
     eprintln!();
     eprintln!("Options:");
@@ -278,10 +280,7 @@ fn conform() -> anyhow::Result<()> {
     let mut survivability_total = 0;
 
     // Setup: create temp directory for outputs
-    let temp_dir = std::env::temp_dir().join(format!(
-        "env-check-conform-{}",
-        std::process::id()
-    ));
+    let temp_dir = std::env::temp_dir().join(format!("env-check-conform-{}", std::process::id()));
     fs::create_dir_all(&temp_dir)?;
 
     // Create conform fixtures directory if it doesn't exist
@@ -343,7 +342,9 @@ fn conform() -> anyhow::Result<()> {
                     match validate_report_against_schema(&report_path, &envelope_schema) {
                         Ok(()) => {
                             static_passed += 1;
-                            eprintln!("  PASS: fail_missing produces valid receipt (exit 2 expected)");
+                            eprintln!(
+                                "  PASS: fail_missing produces valid receipt (exit 2 expected)"
+                            );
                         }
                         Err(e) => eprintln!("  FAIL: fail_missing schema validation: {}", e),
                     }
@@ -368,7 +369,9 @@ fn conform() -> anyhow::Result<()> {
                         match verify_verdict_status(&report_path, "skip") {
                             Ok(()) => {
                                 static_passed += 1;
-                                eprintln!("  PASS: no_sources produces valid receipt with skip verdict");
+                                eprintln!(
+                                    "  PASS: no_sources produces valid receipt with skip verdict"
+                                );
                             }
                             Err(e) => eprintln!("  FAIL: no_sources verdict check: {}", e),
                         }
@@ -417,7 +420,10 @@ fn conform() -> anyhow::Result<()> {
         eprintln!("  SKIP: fail_missing fixture not found");
     }
 
-    eprintln!("  Summary: {}/{} passed", determinism_passed, determinism_total);
+    eprintln!(
+        "  Summary: {}/{} passed",
+        determinism_passed, determinism_total
+    );
 
     // =========================================================================
     // 3. Survivability
@@ -433,11 +439,17 @@ fn conform() -> anyhow::Result<()> {
         let report_path = temp_dir.join("error_recovery_report.json");
         let result = Command::new("cargo")
             .args([
-                "run", "-p", "env-check-cli", "--",
+                "run",
+                "-p",
+                "env-check-cli",
+                "--",
                 "check",
-                "--root", error_recovery.to_str().unwrap(),
-                "--profile", "team",
-                "--out", report_path.to_str().unwrap(),
+                "--root",
+                error_recovery.to_str().unwrap(),
+                "--profile",
+                "team",
+                "--out",
+                report_path.to_str().unwrap(),
             ])
             .output();
 
@@ -473,7 +485,10 @@ fn conform() -> anyhow::Result<()> {
         eprintln!("  SKIP: error_recovery fixture not found");
     }
 
-    eprintln!("  Summary: {}/{} passed", survivability_passed, survivability_total);
+    eprintln!(
+        "  Summary: {}/{} passed",
+        survivability_passed, survivability_total
+    );
 
     // =========================================================================
     // Final Summary
@@ -504,14 +519,20 @@ fn create_conform_fixtures(base_dir: &Path) -> anyhow::Result<()> {
     let pass_basic = base_dir.join("pass_basic");
     fs::create_dir_all(&pass_basic)?;
     // Create a .tool-versions with a tool we know exists (git)
-    fs::write(pass_basic.join(".tool-versions"), "# empty - no tools required\n")?;
+    fs::write(
+        pass_basic.join(".tool-versions"),
+        "# empty - no tools required\n",
+    )?;
     eprintln!("  created: pass_basic/");
 
     // fail_missing - missing tool scenario
     let fail_missing = base_dir.join("fail_missing");
     fs::create_dir_all(&fail_missing)?;
     // Tool that definitely doesn't exist
-    fs::write(fail_missing.join(".tool-versions"), "nonexistent-tool-xyz 1.0.0\n")?;
+    fs::write(
+        fail_missing.join(".tool-versions"),
+        "nonexistent-tool-xyz 1.0.0\n",
+    )?;
     eprintln!("  created: fail_missing/");
 
     // no_sources - no source files, should skip
@@ -526,7 +547,10 @@ fn create_conform_fixtures(base_dir: &Path) -> anyhow::Result<()> {
     fs::create_dir_all(&error_recovery)?;
     // Valid tool-versions but invalid env-check.toml
     fs::write(error_recovery.join(".tool-versions"), "# empty\n")?;
-    fs::write(error_recovery.join("env-check.toml"), "this is not valid toml {{{\n")?;
+    fs::write(
+        error_recovery.join("env-check.toml"),
+        "this is not valid toml {{{\n",
+    )?;
     eprintln!("  created: error_recovery/");
 
     Ok(())
@@ -542,11 +566,17 @@ fn run_env_check_on_fixture(
 
     let output = Command::new("cargo")
         .args([
-            "run", "-p", "env-check-cli", "--",
+            "run",
+            "-p",
+            "env-check-cli",
+            "--",
             "check",
-            "--root", fixture.to_str().unwrap(),
-            "--profile", "team",
-            "--out", report_path.to_str().unwrap(),
+            "--root",
+            fixture.to_str().unwrap(),
+            "--profile",
+            "team",
+            "--out",
+            report_path.to_str().unwrap(),
         ])
         .output()
         .context("run env-check")?;
@@ -568,8 +598,8 @@ fn validate_report_against_schema(
     schema: &jsonschema::JSONSchema,
 ) -> anyhow::Result<()> {
     let bytes = fs::read(path).with_context(|| format!("read {}", path.display()))?;
-    let json: serde_json::Value = serde_json::from_slice(&bytes)
-        .with_context(|| format!("parse {}", path.display()))?;
+    let json: serde_json::Value =
+        serde_json::from_slice(&bytes).with_context(|| format!("parse {}", path.display()))?;
 
     let result = schema.validate(&json);
     if let Err(errors) = result {
@@ -613,7 +643,11 @@ fn verify_verdict_status(path: &Path, expected_status: &str) -> anyhow::Result<(
         if status == expected_status {
             return Ok(());
         }
-        bail!("expected verdict status '{}', got '{}'", expected_status, status);
+        bail!(
+            "expected verdict status '{}', got '{}'",
+            expected_status,
+            status
+        );
     }
 
     bail!("verdict.status not found in report");
@@ -630,11 +664,17 @@ fn check_determinism(fixture: &Path, temp_dir: &Path) -> anyhow::Result<()> {
     let report1 = temp_dir.join(format!("{}_run1.json", name));
     let _ = Command::new("cargo")
         .args([
-            "run", "-p", "env-check-cli", "--",
+            "run",
+            "-p",
+            "env-check-cli",
+            "--",
             "check",
-            "--root", fixture.to_str().unwrap(),
-            "--profile", "team",
-            "--out", report1.to_str().unwrap(),
+            "--root",
+            fixture.to_str().unwrap(),
+            "--profile",
+            "team",
+            "--out",
+            report1.to_str().unwrap(),
         ])
         .output()?;
 
@@ -642,11 +682,17 @@ fn check_determinism(fixture: &Path, temp_dir: &Path) -> anyhow::Result<()> {
     let report2 = temp_dir.join(format!("{}_run2.json", name));
     let _ = Command::new("cargo")
         .args([
-            "run", "-p", "env-check-cli", "--",
+            "run",
+            "-p",
+            "env-check-cli",
+            "--",
             "check",
-            "--root", fixture.to_str().unwrap(),
-            "--profile", "team",
-            "--out", report2.to_str().unwrap(),
+            "--root",
+            fixture.to_str().unwrap(),
+            "--profile",
+            "team",
+            "--out",
+            report2.to_str().unwrap(),
         ])
         .output()?;
 

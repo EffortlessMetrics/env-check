@@ -315,9 +315,7 @@ pub mod checks {
 }
 
 /// Sorting key used to ensure deterministic findings order.
-pub fn finding_sort_key(
-    f: &Finding,
-) -> (std::cmp::Reverse<u8>, String, String, String, String) {
+pub fn finding_sort_key(f: &Finding) -> (std::cmp::Reverse<u8>, String, String, String, String) {
     let sev = std::cmp::Reverse(f.severity.rank());
     let path = f
         .location
@@ -379,10 +377,7 @@ mod tests {
         // Empty sources should be omitted
         assert!(value.get("sources").is_none());
         // Non-empty probes should be present
-        assert_eq!(
-            value.get("probes"),
-            Some(&serde_json::json!(["path"]))
-        );
+        assert_eq!(value.get("probes"), Some(&serde_json::json!(["path"])));
     }
 
     #[test]
