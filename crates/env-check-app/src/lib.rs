@@ -13,8 +13,9 @@ use env_check_probe::{
 };
 use env_check_sources::ParsedSources;
 use env_check_types::{
-    CiMeta, FailOn, GitMeta, HostMeta, Observation, PolicyConfig, Profile, ReceiptEnvelope,
-    Requirement, RunMeta, ToolMeta, SCHEMA_ID, TOOL_NAME,
+    codes, CiMeta, Counts, FailOn, Finding, GitMeta, HostMeta, Observation, PolicyConfig, Profile,
+    ReceiptEnvelope, Requirement, RunMeta, Severity, ToolMeta, Verdict, VerdictStatus, SCHEMA_ID,
+    TOOL_NAME,
 };
 
 use serde::Deserialize;
@@ -213,6 +214,46 @@ fn build_data(policy: &PolicyConfig, parsed: &ParsedSources, outcome: &DomainOut
     })
 }
 
+/// Build a minimal receipt for tool/runtime errors.
+///
+/// This is used when env-check fails before producing a normal receipt.
+pub fn runtime_error_receipt(message: &str) -> ReceiptEnvelope {
+    let started = Utc::now();
+    ReceiptEnvelope {
+        schema: SCHEMA_ID.to_string(),
+        tool: ToolMeta {
+            name: TOOL_NAME.to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            commit: None,
+        },
+        run: RunMeta {
+            started_at: started,
+            ended_at: None,
+            duration_ms: None,
+            host: None,
+            ci: None,
+            git: None,
+        },
+        verdict: Verdict {
+            status: VerdictStatus::Fail,
+            counts: Counts { info: 0, warn: 0, error: 1 },
+            reasons: vec!["tool_error".to_string()],
+        },
+        findings: vec![Finding {
+            severity: Severity::Error,
+            check_id: Some("tool.runtime".into()),
+            code: codes::TOOL_RUNTIME_ERROR.into(),
+            message: message.to_string(),
+            location: None,
+            help: None,
+            url: None,
+            fingerprint: None,
+            data: None,
+        }],
+        data: None,
+    }
+}
+
 /// Write a file atomically: write temp + rename.
 ///
 /// This avoids partial artifacts in CI.
@@ -243,10 +284,10 @@ fn detect_ci() -> Option<CiMeta> {
             provider: "github".to_string(),
             job: std::env::var("GITHUB_JOB").ok(),
             run_id: std::env::var("GITHUB_RUN_ID").ok(),
-            workflow: std::env::var("GITHUB_WORKFLOW").ok(),
-            repository: std::env::var("GITHUB_REPOSITORY").ok(),
-            git_ref: std::env::var("GITHUB_REF").ok(),
-            sha: std::env::var("GITHUB_SHA").ok(),
+            workflow: None,
+            repository: None,
+            git_ref: None,
+            sha: None,
         });
     }
     // GitLab CI
@@ -256,9 +297,9 @@ fn detect_ci() -> Option<CiMeta> {
             job: std::env::var("CI_JOB_NAME").ok(),
             run_id: std::env::var("CI_JOB_ID").ok(),
             workflow: None,
-            repository: std::env::var("CI_PROJECT_PATH").ok(),
-            git_ref: std::env::var("CI_COMMIT_REF_NAME").ok(),
-            sha: std::env::var("CI_COMMIT_SHA").ok(),
+            repository: None,
+            git_ref: None,
+            sha: None,
         });
     }
     // CircleCI
@@ -267,10 +308,10 @@ fn detect_ci() -> Option<CiMeta> {
             provider: "circleci".to_string(),
             job: std::env::var("CIRCLE_JOB").ok(),
             run_id: std::env::var("CIRCLE_BUILD_NUM").ok(),
-            workflow: std::env::var("CIRCLE_WORKFLOW_ID").ok(),
-            repository: std::env::var("CIRCLE_PROJECT_REPONAME").ok(),
-            git_ref: std::env::var("CIRCLE_BRANCH").ok(),
-            sha: std::env::var("CIRCLE_SHA1").ok(),
+            workflow: None,
+            repository: None,
+            git_ref: None,
+            sha: None,
         });
     }
     // Azure Pipelines
@@ -279,10 +320,10 @@ fn detect_ci() -> Option<CiMeta> {
             provider: "azure".to_string(),
             job: std::env::var("SYSTEM_JOBDISPLAYNAME").ok(),
             run_id: std::env::var("BUILD_BUILDID").ok(),
-            workflow: std::env::var("BUILD_DEFINITIONNAME").ok(),
-            repository: std::env::var("BUILD_REPOSITORY_NAME").ok(),
-            git_ref: std::env::var("BUILD_SOURCEBRANCHNAME").ok(),
-            sha: std::env::var("BUILD_SOURCEVERSION").ok(),
+            workflow: None,
+            repository: None,
+            git_ref: None,
+            sha: None,
         });
     }
     // Generic CI detection
@@ -305,6 +346,7 @@ fn detect_ci() -> Option<CiMeta> {
 struct GitHubPrEvent {
     base_sha: Option<String>,
     head_sha: Option<String>,
+    #[allow(dead_code)]
     pr_number: Option<u64>,
     base_ref: Option<String>,
 }
@@ -429,10 +471,6 @@ fn detect_git(root: &Path) -> Option<GitMeta> {
         .or_else(|| git(root, &["rev-parse", "HEAD"]));
 
     // Use GitHub event PR number if available, otherwise try env vars
-    let pr_number = gh_event.pr_number
-        .or_else(|| std::env::var("GITHUB_PR_NUMBER").ok().and_then(|s| s.parse().ok()))
-        .or_else(|| std::env::var("CI_MERGE_REQUEST_IID").ok().and_then(|s| s.parse().ok()));
-
     Some(GitMeta {
         repo: git(root, &["config", "--get", "remote.origin.url"]),
         base_ref,
@@ -440,7 +478,7 @@ fn detect_git(root: &Path) -> Option<GitMeta> {
         base_sha: gh_event.base_sha,
         head_sha,
         merge_base,
-        pr_number,
+        pr_number: None,
     })
 }
 

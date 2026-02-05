@@ -1,4 +1,5 @@
 use assert_cmd::Command;
+use jsonschema::JSONSchema;
 use predicates::prelude::*;
 use serde_json::Value;
 use std::fs;
@@ -10,6 +11,20 @@ fn fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("fixtures")
+}
+
+fn envelope_schema() -> JSONSchema {
+    let schema_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("schemas")
+        .join("receipt.envelope.v1.json");
+    let schema_bytes = fs::read_to_string(&schema_path)
+        .unwrap_or_else(|e| panic!("read schema {}: {}", schema_path.display(), e));
+    let schema_json: Value = serde_json::from_str(&schema_bytes)
+        .unwrap_or_else(|e| panic!("parse schema {}: {}", schema_path.display(), e));
+    JSONSchema::compile(&schema_json)
+        .unwrap_or_else(|e| panic!("compile schema {}: {}", schema_path.display(), e))
 }
 
 /// Create a Command for the env-check binary.
@@ -283,6 +298,43 @@ fn invalid_fail_on_fails() {
     cmd.assert().failure();
 }
 
+#[test]
+fn runtime_error_writes_receipt_and_exits_one() {
+    let tmp = tempdir().unwrap();
+    let out_path = tmp.path().join("report.json");
+    let bad_config = tmp.path().join("bad.toml");
+
+    fs::write(&bad_config, "not = [toml").unwrap();
+
+    let mut cmd = env_check_cmd();
+    cmd.arg("check")
+        .arg("--root")
+        .arg(fixtures_dir().join("no_sources"))
+        .arg("--config")
+        .arg(&bad_config)
+        .arg("--out")
+        .arg(&out_path);
+
+    cmd.assert().code(1);
+
+    assert!(out_path.exists(), "Report should be written on runtime errors");
+    let content = fs::read_to_string(&out_path).unwrap();
+    let json: Value = serde_json::from_str(&content).unwrap();
+
+    assert_eq!(json["verdict"]["status"].as_str().unwrap(), "fail");
+    let reasons = json["verdict"]["reasons"].as_array().unwrap();
+    assert!(reasons.iter().any(|r| r.as_str() == Some("tool_error")));
+    let finding = json["findings"].as_array().unwrap().get(0).expect("Missing finding");
+    assert_eq!(finding["code"].as_str().unwrap(), "tool.runtime_error");
+
+    let schema = envelope_schema();
+    let validation = schema.validate(&json);
+    if let Err(errors) = validation {
+        let messages: Vec<String> = errors.map(|e| format!("{}: {}", e.instance_path, e)).collect();
+        panic!("runtime error receipt failed envelope validation:\n{}", messages.join("\n"));
+    }
+}
+
 // =============================================================================
 // EXIT CODE TESTS
 // =============================================================================
@@ -457,6 +509,31 @@ fn report_json_has_valid_structure() {
     // Verify verdict structure
     assert!(json["verdict"].get("status").is_some(), "Verdict should have 'status'");
     assert!(json["verdict"].get("counts").is_some(), "Verdict should have 'counts'");
+}
+
+#[test]
+fn report_json_matches_envelope_schema() {
+    let tmp = tempdir().unwrap();
+    let out_path = tmp.path().join("report.json");
+
+    let mut cmd = env_check_cmd();
+    cmd.arg("check")
+        .arg("--root")
+        .arg(fixtures_dir().join("no_sources"))
+        .arg("--out")
+        .arg(&out_path);
+
+    cmd.assert().success();
+
+    let content = fs::read_to_string(&out_path).unwrap();
+    let json: Value = serde_json::from_str(&content).expect("Report should be valid JSON");
+
+    let schema = envelope_schema();
+    let validation = schema.validate(&json);
+    if let Err(errors) = validation {
+        let messages: Vec<String> = errors.map(|e| format!("{}: {}", e.instance_path, e)).collect();
+        panic!("report.json failed envelope validation:\n{}", messages.join("\n"));
+    }
 }
 
 #[test]

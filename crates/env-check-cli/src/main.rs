@@ -174,21 +174,36 @@ fn main() -> anyhow::Result<()> {
 
             let options = CheckOptions { debug_log_path };
 
-            let output =
-                run_check_with_options(&root, config.as_deref(), profile.into(), fail_on.into(), options)
-                    .with_context(|| "run env-check")?;
+            match run_check_with_options(&root, config.as_deref(), profile.into(), fail_on.into(), options)
+                .with_context(|| "run env-check")
+            {
+                Ok(output) => {
+                    let json = serde_json::to_vec_pretty(&output.receipt)?;
+                    write_atomic(&out, &json)?;
 
-            let json = serde_json::to_vec_pretty(&output.receipt)?;
-            write_atomic(&out, &json)?;
+                    if let Some(md_path) = md {
+                        write_atomic(&md_path, output.markdown.as_bytes())?;
+                    }
 
-            if let Some(md_path) = md {
-                write_atomic(&md_path, output.markdown.as_bytes())?;
+                    // Print a one-line summary (useful for local runs).
+                    eprintln!("env-check: {:?}", output.receipt.verdict.status);
+
+                    std::process::exit(output.exit_code);
+                }
+                Err(err) => {
+                    let receipt = env_check_app::runtime_error_receipt(&err.to_string());
+                    let json = serde_json::to_vec_pretty(&receipt)?;
+                    write_atomic(&out, &json)?;
+
+                    if let Some(md_path) = md {
+                        let markdown = env_check_render::render_markdown(&receipt);
+                        write_atomic(&md_path, markdown.as_bytes())?;
+                    }
+
+                    eprintln!("env-check: {}", err);
+                    std::process::exit(1);
+                }
             }
-
-            // Print a one-line summary (useful for local runs).
-            eprintln!("env-check: {:?}", output.receipt.verdict.status);
-
-            std::process::exit(output.exit_code);
         }
         Command::Md { report_positional, report_flag, out } => {
             // Positional argument takes precedence over --report flag

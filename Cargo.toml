@@ -64,3 +64,15 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 
 semver = "1"
 jsonschema = "0.17"
+
+[workspace.metadata.dist]
+cargo-dist-version = "0.30.3"
+ci = "github"
+installers = ["shell", "powershell"]
+targets = [
+  "x86_64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+  "aarch64-apple-darwin",
+]
+tag-namespace = "v"
+pr-run-mode = "plan"

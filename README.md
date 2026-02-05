@@ -43,6 +43,33 @@ artifacts/env-check/comment.md     # optional (PR-friendly summary)
 artifacts/env-check/raw.log        # optional (probe transcript)
 ```
 
+## Install
+
+### GitHub Releases (prebuilt binaries)
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/EffortlessMetrics/env-check/releases/latest/download/env-check-installer.sh \
+  | sh
+```
+
+PowerShell:
+
+```powershell
+irm https://github.com/EffortlessMetrics/env-check/releases/latest/download/env-check-installer.ps1 | iex
+```
+
+### GitHub Action (one-step adoption)
+
+```yaml
+- name: env-check
+  uses: EffortlessMetrics/env-check@v0.1.0
+  with:
+    profile: oss
+    root: .
+    md: artifacts/env-check/comment.md
+```
+
 ## Quickstart
 
 ```bash
@@ -81,6 +108,12 @@ See:
 
 - `schemas/receipt.envelope.v1.json`
 - `schemas/env-check.report.v1.json`
+
+## Final statement
+
+env-check is intentionally machine-truth and optional by default. It emits a standard receipt
+and minimal PR-friendly output, and it never runs builds, enforces repo policy, or modifies
+the repository.
 
 ## License
 

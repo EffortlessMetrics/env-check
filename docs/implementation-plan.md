@@ -177,8 +177,8 @@ This plan is sequenced to land small, reversible increments while keeping contra
 
 ### Definition of done
 
-- [ ] A repo can adopt env-check with one workflow step and one config stanza
-- [ ] Output is stable enough that cockpit can treat it as an API
+- [x] A repo can adopt env-check with one workflow step and one config stanza
+- [x] Output is stable enough that cockpit can treat it as an API
 
 ## BDD scenarios (minimum set)
 
