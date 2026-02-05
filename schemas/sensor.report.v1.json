@@ -1,7 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:effortless:receipt.envelope.v1",
-  "title": "receipt.envelope.v1",
+  "$id": "urn:effortless:sensor.report.v1",
+  "title": "sensor.report.v1",
+  "description": "Ecosystem-standard alias for receipt.envelope.v1. Cockpit sensors emit receipts conforming to this schema.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -121,14 +122,14 @@
               "items": {
                 "type": "string"
               },
-              "description": "Source file types that were parsed"
+              "description": "Source file types that were parsed (e.g., tool-versions, mise, rust-toolchain)"
             },
             "probes": {
               "type": "array",
               "items": {
                 "type": "string"
               },
-              "description": "Probe types that were used"
+              "description": "Probe types that were used (e.g., path, rustup, hash)"
             }
           }
         }

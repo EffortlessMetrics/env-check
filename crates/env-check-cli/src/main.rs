@@ -60,6 +60,14 @@ enum Command {
         /// Can also be set via ENV_CHECK_DEBUG_LOG environment variable.
         #[arg(long, env = "ENV_CHECK_DEBUG_LOG")]
         log_file: Option<PathBuf>,
+
+        /// Output mode: default (exit 2 on fail) or cockpit (exit 0 if receipt written).
+        ///
+        /// In cockpit mode, the exit code is 0 as long as the receipt was successfully written,
+        /// regardless of the verdict. This is useful for CI integrations where the cockpit
+        /// orchestrator reads the receipt and handles the verdict separately.
+        #[arg(long, default_value = "default", value_parser = parse_mode)]
+        mode: OutputMode,
     },
 
     /// Render markdown from an existing report.json.
@@ -156,6 +164,28 @@ impl From<FailOnArg> for FailOn {
     }
 }
 
+/// Output mode for CI integrations.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+enum OutputMode {
+    /// Default mode: exit code reflects verdict (0 for pass/warn, 2 for fail).
+    #[default]
+    Default,
+    /// Cockpit mode: exit 0 if receipt was written successfully, regardless of verdict.
+    /// The cockpit orchestrator reads the receipt and handles the verdict separately.
+    Cockpit,
+}
+
+fn parse_mode(s: &str) -> Result<OutputMode, String> {
+    match s {
+        "default" => Ok(OutputMode::Default),
+        "cockpit" => Ok(OutputMode::Cockpit),
+        other => Err(format!(
+            "invalid mode '{}': expected 'default' or 'cockpit'",
+            other
+        )),
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
@@ -169,6 +199,7 @@ fn main() -> anyhow::Result<()> {
             md,
             debug,
             log_file,
+            mode,
         } => {
             // Determine debug log path:
             // 1. Explicit --log-file takes precedence
@@ -204,7 +235,13 @@ fn main() -> anyhow::Result<()> {
                     // Print a one-line summary (useful for local runs).
                     eprintln!("env-check: {:?}", output.receipt.verdict.status);
 
-                    std::process::exit(output.exit_code);
+                    // In cockpit mode, exit 0 if receipt was written successfully.
+                    // The orchestrator reads the receipt and handles the verdict.
+                    let exit_code = match mode {
+                        OutputMode::Cockpit => 0,
+                        OutputMode::Default => output.exit_code,
+                    };
+                    std::process::exit(exit_code);
                 }
                 Err(err) => {
                     let receipt = env_check_app::runtime_error_receipt(&err.to_string());
@@ -217,7 +254,13 @@ fn main() -> anyhow::Result<()> {
                     }
 
                     eprintln!("env-check: {}", err);
-                    std::process::exit(1);
+                    // In cockpit mode, exit 0 even for runtime errors if receipt was written.
+                    // The receipt contains the error finding.
+                    let exit_code = match mode {
+                        OutputMode::Cockpit => 0,
+                        OutputMode::Default => 1,
+                    };
+                    std::process::exit(exit_code);
                 }
             }
         }

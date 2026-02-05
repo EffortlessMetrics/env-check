@@ -13,9 +13,9 @@ use env_check_probe::{
 };
 use env_check_sources::ParsedSources;
 use env_check_types::{
-    codes, CiMeta, Counts, FailOn, Finding, GitMeta, HostMeta, Observation, PolicyConfig, Profile,
-    ReceiptEnvelope, Requirement, RunMeta, Severity, ToolMeta, Verdict, VerdictStatus, SCHEMA_ID,
-    TOOL_NAME,
+    codes, Capabilities, CiMeta, Counts, FailOn, Finding, GitMeta, HostMeta, Observation,
+    PolicyConfig, Profile, ReceiptEnvelope, Requirement, RunMeta, Severity, SourceKind, ToolMeta,
+    Verdict, VerdictStatus, SCHEMA_ID, TOOL_NAME,
 };
 
 use serde::Deserialize;
@@ -109,6 +109,8 @@ pub fn run_check_with_options(
 
     // Build receipt envelope.
     let data = build_data(&policy, &parsed, &outcome);
+    let git = detect_git(root);
+    let capabilities = build_capabilities(&parsed, &requirements, git.as_ref());
 
     let receipt = ReceiptEnvelope {
         schema: SCHEMA_ID.to_string(),
@@ -123,7 +125,8 @@ pub fn run_check_with_options(
             duration_ms: Some(duration_ms),
             host: detect_host(),
             ci: detect_ci(),
-            git: detect_git(root),
+            git,
+            capabilities: Some(capabilities),
         },
         verdict: outcome.verdict.clone(),
         findings: outcome.findings.clone(),
@@ -234,6 +237,66 @@ fn build_data(
     })
 }
 
+/// Build capabilities block declaring what the sensor actually checked.
+///
+/// This enables "No Green By Omission" - consumers can distinguish between
+/// "we checked and found nothing wrong" vs "we didn't check at all".
+fn build_capabilities(
+    parsed: &ParsedSources,
+    requirements: &[Requirement],
+    git: Option<&GitMeta>,
+) -> Capabilities {
+    use std::collections::BTreeSet;
+
+    // Collect unique source kinds that were parsed
+    let sources: Vec<String> = parsed
+        .sources_used
+        .iter()
+        .map(|s| source_kind_to_string(&s.kind))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+
+    // Collect unique probe kinds that will be/were used
+    let probes: Vec<String> = requirements
+        .iter()
+        .map(|r| probe_kind_to_string(&r.probe_kind))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+
+    Capabilities {
+        git: git.is_some(),
+        sources,
+        probes,
+    }
+}
+
+/// Map SourceKind enum to stable string identifier for capabilities.
+fn source_kind_to_string(kind: &SourceKind) -> String {
+    match kind {
+        SourceKind::ToolVersions => "tool-versions".to_string(),
+        SourceKind::MiseToml => "mise".to_string(),
+        SourceKind::RustToolchain => "rust-toolchain".to_string(),
+        SourceKind::HashManifest => "hash-manifest".to_string(),
+        SourceKind::NodeVersion => "node-version".to_string(),
+        SourceKind::Nvmrc => "nvmrc".to_string(),
+        SourceKind::PackageJson => "package-json".to_string(),
+        SourceKind::PythonVersion => "python-version".to_string(),
+        SourceKind::PyprojectToml => "pyproject".to_string(),
+        SourceKind::GoMod => "go-mod".to_string(),
+    }
+}
+
+/// Map ProbeKind enum to stable string identifier for capabilities.
+fn probe_kind_to_string(kind: &env_check_types::ProbeKind) -> String {
+    match kind {
+        env_check_types::ProbeKind::PathTool => "path".to_string(),
+        env_check_types::ProbeKind::RustupToolchain => "rustup".to_string(),
+        env_check_types::ProbeKind::FileHash => "hash".to_string(),
+    }
+}
+
 /// Build a minimal receipt for tool/runtime errors.
 ///
 /// This is used when env-check fails before producing a normal receipt.
@@ -253,6 +316,7 @@ pub fn runtime_error_receipt(message: &str) -> ReceiptEnvelope {
             host: None,
             ci: None,
             git: None,
+            capabilities: None,
         },
         verdict: Verdict {
             status: VerdictStatus::Fail,

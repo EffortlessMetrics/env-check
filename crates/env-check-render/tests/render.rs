@@ -26,6 +26,7 @@ fn make_receipt(
             host: None,
             ci: None,
             git: None,
+            capabilities: None,
         },
         verdict: Verdict {
             status,
@@ -578,6 +579,7 @@ fn render_with_ci_metadata() {
             merge_base: None,
             pr_number: Some(42),
         }),
+        capabilities: None,
     };
     let receipt = make_receipt_with_run_meta(
         VerdictStatus::Pass,

@@ -51,6 +51,24 @@ pub struct ToolMeta {
     pub commit: Option<String>,
 }
 
+/// Declares what the sensor actually checked ("No Green By Omission").
+///
+/// This allows downstream consumers to distinguish between:
+/// - "We checked for X and found nothing wrong" (capability present, no findings)
+/// - "We didn't check for X at all" (capability absent)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct Capabilities {
+    /// Whether git metadata was detected and used.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub git: bool,
+    /// Source file types that were parsed (e.g., "tool-versions", "mise", "rust-toolchain").
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<String>,
+    /// Probe types that were used (e.g., "path", "rustup", "hash").
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub probes: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RunMeta {
     pub started_at: DateTime<Utc>,
@@ -64,6 +82,8 @@ pub struct RunMeta {
     pub ci: Option<CiMeta>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub git: Option<GitMeta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<Capabilities>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -306,4 +326,97 @@ pub fn finding_sort_key(
         .unwrap_or_default();
     let check_id = f.check_id.clone().unwrap_or_default();
     (sev, path, check_id, f.code.clone(), f.message.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn capabilities_default_is_empty() {
+        let caps = Capabilities::default();
+        assert!(!caps.git);
+        assert!(caps.sources.is_empty());
+        assert!(caps.probes.is_empty());
+    }
+
+    #[test]
+    fn capabilities_serialization_round_trip() {
+        let caps = Capabilities {
+            git: true,
+            sources: vec!["tool-versions".into(), "mise".into()],
+            probes: vec!["path".into(), "rustup".into()],
+        };
+
+        let json = serde_json::to_string(&caps).unwrap();
+        let parsed: Capabilities = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(caps, parsed);
+    }
+
+    #[test]
+    fn capabilities_empty_fields_omitted_in_json() {
+        let caps = Capabilities::default();
+        let json = serde_json::to_string(&caps).unwrap();
+
+        // Empty capabilities should serialize to empty object
+        assert_eq!(json, "{}");
+    }
+
+    #[test]
+    fn capabilities_partial_fields_serialized() {
+        let caps = Capabilities {
+            git: true,
+            sources: vec![],
+            probes: vec!["path".into()],
+        };
+
+        let json = serde_json::to_string(&caps).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        // git=true should be present
+        assert_eq!(value.get("git"), Some(&serde_json::json!(true)));
+        // Empty sources should be omitted
+        assert!(value.get("sources").is_none());
+        // Non-empty probes should be present
+        assert_eq!(
+            value.get("probes"),
+            Some(&serde_json::json!(["path"]))
+        );
+    }
+
+    #[test]
+    fn run_meta_with_capabilities() {
+        use chrono::TimeZone;
+
+        let run = RunMeta {
+            started_at: Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
+            ended_at: None,
+            duration_ms: None,
+            host: None,
+            ci: None,
+            git: None,
+            capabilities: Some(Capabilities {
+                git: true,
+                sources: vec!["tool-versions".into()],
+                probes: vec!["path".into()],
+            }),
+        };
+
+        let json = serde_json::to_string(&run).unwrap();
+        let parsed: RunMeta = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(run, parsed);
+        assert!(parsed.capabilities.is_some());
+        assert!(parsed.capabilities.as_ref().unwrap().git);
+    }
+
+    #[test]
+    fn run_meta_without_capabilities_backward_compatible() {
+        // JSON without capabilities field should deserialize successfully
+        let json = r#"{"started_at":"2024-01-01T00:00:00Z"}"#;
+        let parsed: RunMeta = serde_json::from_str(json).unwrap();
+
+        assert!(parsed.capabilities.is_none());
+    }
 }
