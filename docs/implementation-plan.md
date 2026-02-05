@@ -180,6 +180,29 @@ This plan is sequenced to land small, reversible increments while keeping contra
 - [x] A repo can adopt env-check with one workflow step and one config stanza
 - [x] Output is stable enough that cockpit can treat it as an API
 
+## Phase 7 — Adoption validation (repo-only)
+
+### Work (checklist)
+
+- Contract conformance:
+  - receipt schema validation stays green (`receipt.envelope.v1`)
+  - findings ordering is severity desc → path → check_id → code → message
+  - skip receipts include `verdict.reasons = ["no_sources", ...]`
+- Offline-first behavior:
+  - no network access required for normal operation
+  - git metadata collection is best-effort and does not fetch
+- Action usage:
+  - composite action installs a pinned release and writes artifacts
+  - example workflow uploads `artifacts/env-check/`
+- Cockpit ingestion:
+  - docs specify "Environment" section expectations
+  - receipts consumed without adapters or special cases
+- Release readiness gates:
+  - dist workflows present and aligned with targets
+  - release tag `v0.1.0` produces installers + binaries
+
+**Pilots:** skipped (repo-only validation for this phase).
+
 ## BDD scenarios (minimum set)
 
 Feature: “Environment sanity”

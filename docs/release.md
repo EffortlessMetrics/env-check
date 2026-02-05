@@ -20,3 +20,17 @@ Current release targets:
 
 Installers: `shell` + `powershell` (`env-check-installer.sh` / `env-check-installer.ps1`).
 Tag releases as `vX.Y.Z` and let the release workflow build and upload assets.
+
+## Compatibility and versioning
+
+Schema and finding codes are public APIs. Changes must follow semver:
+
+- **Patch**: no schema or code changes.
+- **Minor**: additive changes only under `data` or `finding.data`.
+- **Major**: any breaking change to schema, codes, or their semantics.
+
+Deprecation policy:
+
+- Mark deprecated codes/fields in docs first.
+- Keep them emitted for at least one minor release.
+- Remove only in the next major release.

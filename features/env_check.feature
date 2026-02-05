@@ -8,6 +8,7 @@ Feature: Environment sanity
     Given a repo fixture "no_sources"
     When I run env-check with profile "oss"
     Then the exit code is 0
+    And the verdict reasons contain "no_sources"
 
   Scenario: Missing required tool fails under team
     Given a repo fixture "missing_tool"

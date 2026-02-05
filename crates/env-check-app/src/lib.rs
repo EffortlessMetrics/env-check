@@ -440,21 +440,25 @@ fn parse_github_event_json(content: &str) -> GitHubPrEvent {
 fn compute_merge_base(root: &Path, base_ref: Option<&str>) -> Option<String> {
     use std::process::Command;
 
-    // Use detected base_ref, or fall back to origin/main
-    let base_branch = base_ref
-        .map(|r| format!("origin/{}", r))
-        .unwrap_or_else(|| "origin/main".to_string());
+    fn ref_exists(root: &Path, reference: &str) -> bool {
+        Command::new("git")
+            .args(["rev-parse", "--verify", reference])
+            .current_dir(root)
+            .output()
+            .ok()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
 
-    // First, try to fetch the base branch to ensure we have it
-    // (This is best-effort; if it fails, we'll try merge-base anyway)
-    let _ = Command::new("git")
-        .args(["fetch", "origin", base_ref.unwrap_or("main"), "--depth=1"])
-        .current_dir(root)
-        .output();
+    let base_name = base_ref.unwrap_or("main");
+    let candidates = [format!("origin/{}", base_name), base_name.to_string()];
+    let base_branch = candidates
+        .iter()
+        .find(|r| ref_exists(root, r))
+        .map(|r| r.as_str())?;
 
-    // Compute merge-base
     Command::new("git")
-        .args(["merge-base", "HEAD", &base_branch])
+        .args(["merge-base", "HEAD", base_branch])
         .current_dir(root)
         .output()
         .ok()
@@ -716,5 +720,49 @@ mod tests {
         assert_eq!(event.head_sha, None);
         assert_eq!(event.pr_number, None);
         assert_eq!(event.base_ref, None);
+    }
+
+    #[test]
+    fn compute_merge_base_missing_base_ref_returns_none() {
+        use std::process::Command;
+
+        fn git(root: &Path, args: &[&str]) {
+            let status = Command::new("git")
+                .args(args)
+                .current_dir(root)
+                .status()
+                .expect("run git");
+            assert!(status.success(), "git {:?} failed", args);
+        }
+
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let temp_root = std::env::temp_dir().join(format!("env-check-merge-base-{unique}"));
+
+        fs::create_dir_all(&temp_root).expect("create temp repo dir");
+        git(&temp_root, &["init"]);
+        git(
+            &temp_root,
+            &[
+                "-c",
+                "user.name=env-check",
+                "-c",
+                "user.email=env-check@example.com",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "init",
+            ],
+        );
+
+        let merge_base = compute_merge_base(&temp_root, Some("missing-base-ref"));
+        assert!(
+            merge_base.is_none(),
+            "expected None when base ref does not exist"
+        );
+
+        let _ = fs::remove_dir_all(&temp_root);
     }
 }

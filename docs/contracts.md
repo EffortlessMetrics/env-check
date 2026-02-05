@@ -38,6 +38,18 @@ These are stable external identifiers. Treat changes as breaking.
 
 Each emitted code must have an `env-check explain` entry.
 
+## Compatibility contract
+
+The receipt schema (`env-check.report.v1`) and finding codes are public APIs.
+Compatibility rules:
+
+- **Patch releases**: no schema or code changes.
+- **Minor releases**: additive fields under `data` or `finding.data` only.
+- **Major releases**: required for breaking schema or code changes.
+
+Deprecations must be documented, kept for at least one minor release, and
+removed only in the next major release.
+
 ## Source kinds
 
 Supported source file types (defined in `env-check-types::SourceKind`):

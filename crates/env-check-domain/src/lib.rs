@@ -67,6 +67,10 @@ pub fn evaluate_with_extras(
     let counts = count(&findings);
     let mut reasons = reasons(&findings);
 
+    if sources_used.is_empty() {
+        reasons.push("no_sources".to_string());
+    }
+
     if truncated {
         reasons.push("truncated".to_string());
     }
@@ -668,6 +672,7 @@ mod tests {
         let policy = PolicyConfig::default();
         let out = evaluate(&[], &[], &policy, &[]);
         assert_eq!(out.verdict.status, VerdictStatus::Skip);
+        assert!(out.verdict.reasons.contains(&"no_sources".to_string()));
     }
 
     #[test]
@@ -678,6 +683,7 @@ mod tests {
         let obs = vec![obs("node", true, Some("20.0.0"))];
         let out = evaluate(&reqs, &obs, &policy, &[]);
         assert_eq!(out.verdict.status, VerdictStatus::Skip);
+        assert!(out.verdict.reasons.contains(&"no_sources".to_string()));
     }
 
     // ==================== Verdict computation with fail_on ====================
@@ -933,10 +939,11 @@ mod tests {
         ];
         let obs = vec![obs_missing("opt"), obs_missing("required")];
         let out = evaluate(&reqs, &obs, &policy, &[".tool-versions".into()]);
-        // Findings are sorted by severity rank ascending (Info=1, Warn=2, Error=3), then by path, check_id, code, message
-        // So Warn (rank 2) comes before Error (rank 3)
-        assert_eq!(out.findings[0].severity, Severity::Warn);
-        assert_eq!(out.findings[1].severity, Severity::Error);
+        // Findings are sorted by severity rank descending (Error=3, Warn=2, Info=1),
+        // then by path, check_id, code, message.
+        // So Error comes before Warn.
+        assert_eq!(out.findings[0].severity, Severity::Error);
+        assert_eq!(out.findings[1].severity, Severity::Warn);
     }
 
     #[test]

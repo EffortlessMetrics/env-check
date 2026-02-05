@@ -295,8 +295,10 @@ pub mod checks {
 }
 
 /// Sorting key used to ensure deterministic findings order.
-pub fn finding_sort_key(f: &Finding) -> (u8, String, String, String, String) {
-    let sev = f.severity.rank();
+pub fn finding_sort_key(
+    f: &Finding,
+) -> (std::cmp::Reverse<u8>, String, String, String, String) {
+    let sev = std::cmp::Reverse(f.severity.rank());
     let path = f
         .location
         .as_ref()

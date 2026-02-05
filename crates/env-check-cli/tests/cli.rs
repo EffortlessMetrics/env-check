@@ -99,7 +99,15 @@ fn check_no_sources_exits_zero() {
     // Verify report was written
     assert!(out_path.exists());
     let content = fs::read_to_string(&out_path).unwrap();
-    assert!(content.contains("\"status\": \"skip\""));
+    let json: Value = serde_json::from_str(&content).unwrap();
+    assert_eq!(json["verdict"]["status"].as_str().unwrap(), "skip");
+    let reasons = json["verdict"]["reasons"]
+        .as_array()
+        .expect("verdict.reasons should be an array");
+    assert!(
+        reasons.iter().any(|r| r.as_str() == Some("no_sources")),
+        "expected verdict reasons to include no_sources"
+    );
 }
 
 #[test]
