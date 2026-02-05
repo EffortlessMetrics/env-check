@@ -102,7 +102,10 @@ pub fn run_check_with_options(
     );
 
     let ended = Utc::now();
-    let duration_ms = ended.signed_duration_since(started).num_milliseconds().max(0) as u64;
+    let duration_ms = ended
+        .signed_duration_since(started)
+        .num_milliseconds()
+        .max(0) as u64;
 
     // Build receipt envelope.
     let data = build_data(&policy, &parsed, &outcome);
@@ -153,14 +156,16 @@ fn probe_requirements(
 ) -> anyhow::Result<Vec<Observation>> {
     if let Some(log_path) = &options.debug_log_path {
         // Use logging command runner
-        let log_writer =
-            FileLogWriter::new(log_path).with_context(|| format!("create debug log at {}", log_path.display()))?;
+        let log_writer = FileLogWriter::new(log_path)
+            .with_context(|| format!("create debug log at {}", log_path.display()))?;
         let logging_runner = LoggingCommandRunner::new(OsCommandRunner, log_writer);
-        let prober = Prober::new(logging_runner, OsPathResolver, Sha256Hasher).context("init prober")?;
+        let prober =
+            Prober::new(logging_runner, OsPathResolver, Sha256Hasher).context("init prober")?;
         Ok(requirements.iter().map(|r| prober.probe(root, r)).collect())
     } else {
         // Use regular command runner (no logging)
-        let prober = Prober::new(OsCommandRunner, OsPathResolver, Sha256Hasher).context("init prober")?;
+        let prober =
+            Prober::new(OsCommandRunner, OsPathResolver, Sha256Hasher).context("init prober")?;
         Ok(requirements.iter().map(|r| prober.probe(root, r)).collect())
     }
 }
@@ -170,16 +175,24 @@ fn load_config(root: &Path, config_path: Option<&Path>) -> anyhow::Result<AppCon
         Some(p) => p.to_path_buf(),
         None => {
             let p = root.join("env-check.toml");
-            if p.exists() { p } else { return Ok(AppConfig::default()); }
+            if p.exists() {
+                p
+            } else {
+                return Ok(AppConfig::default());
+            }
         }
     };
 
-    let text = fs::read_to_string(&path).with_context(|| format!("read config {}", path.display()))?;
+    let text =
+        fs::read_to_string(&path).with_context(|| format!("read config {}", path.display()))?;
     let cfg: AppConfig = toml::from_str(&text).with_context(|| "parse env-check.toml")?;
     Ok(cfg)
 }
 
-fn normalize_requirements(mut reqs: Vec<env_check_types::Requirement>, cfg: &AppConfig) -> Vec<env_check_types::Requirement> {
+fn normalize_requirements(
+    mut reqs: Vec<env_check_types::Requirement>,
+    cfg: &AppConfig,
+) -> Vec<env_check_types::Requirement> {
     // ignore tools
     reqs.retain(|r| !cfg.ignore_tools.iter().any(|t| t == &r.tool));
 
@@ -193,7 +206,10 @@ fn normalize_requirements(mut reqs: Vec<env_check_types::Requirement>, cfg: &App
     // Deduplicate by (tool, probe_kind). Keep first occurrence (sources are already in deterministic order).
     let mut out: Vec<env_check_types::Requirement> = vec![];
     for r in reqs {
-        if out.iter().any(|x| x.tool == r.tool && x.probe_kind == r.probe_kind) {
+        if out
+            .iter()
+            .any(|x| x.tool == r.tool && x.probe_kind == r.probe_kind)
+        {
             continue;
         }
         out.push(r);
@@ -201,7 +217,11 @@ fn normalize_requirements(mut reqs: Vec<env_check_types::Requirement>, cfg: &App
     out
 }
 
-fn build_data(policy: &PolicyConfig, parsed: &ParsedSources, outcome: &DomainOutcome) -> serde_json::Value {
+fn build_data(
+    policy: &PolicyConfig,
+    parsed: &ParsedSources,
+    outcome: &DomainOutcome,
+) -> serde_json::Value {
     use serde_json::json;
 
     json!({
@@ -236,7 +256,11 @@ pub fn runtime_error_receipt(message: &str) -> ReceiptEnvelope {
         },
         verdict: Verdict {
             status: VerdictStatus::Fail,
-            counts: Counts { info: 0, warn: 0, error: 1 },
+            counts: Counts {
+                info: 0,
+                warn: 0,
+                error: 1,
+            },
             reasons: vec!["tool_error".to_string()],
         },
         findings: vec![Finding {
@@ -263,7 +287,8 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
 
     let tmp = path.with_extension("tmp");
     fs::write(&tmp, bytes).with_context(|| format!("write {}", tmp.display()))?;
-    fs::rename(&tmp, path).with_context(|| format!("rename {} -> {}", tmp.display(), path.display()))?;
+    fs::rename(&tmp, path)
+        .with_context(|| format!("rename {} -> {}", tmp.display(), path.display()))?;
     Ok(())
 }
 
@@ -391,17 +416,19 @@ fn parse_github_event_json(content: &str) -> GitHubPrEvent {
     };
 
     GitHubPrEvent {
-        base_sha: pr.get("base")
+        base_sha: pr
+            .get("base")
             .and_then(|b| b.get("sha"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string()),
-        head_sha: pr.get("head")
+        head_sha: pr
+            .get("head")
             .and_then(|h| h.get("sha"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string()),
-        pr_number: pr.get("number")
-            .and_then(|v| v.as_u64()),
-        base_ref: pr.get("base")
+        pr_number: pr.get("number").and_then(|v| v.as_u64()),
+        base_ref: pr
+            .get("base")
             .and_then(|b| b.get("ref"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string()),
@@ -458,15 +485,27 @@ fn detect_git(root: &Path) -> Option<GitMeta> {
     let gh_event = parse_github_event();
 
     // Determine base_ref from multiple sources (prefer GitHub event, then env vars)
-    let base_ref = gh_event.base_ref.clone()
-        .or_else(|| std::env::var("GITHUB_BASE_REF").ok().filter(|s| !s.is_empty()))
-        .or_else(|| std::env::var("CI_MERGE_REQUEST_TARGET_BRANCH_NAME").ok().filter(|s| !s.is_empty()));
+    let base_ref = gh_event
+        .base_ref
+        .clone()
+        .or_else(|| {
+            std::env::var("GITHUB_BASE_REF")
+                .ok()
+                .filter(|s| !s.is_empty())
+        })
+        .or_else(|| {
+            std::env::var("CI_MERGE_REQUEST_TARGET_BRANCH_NAME")
+                .ok()
+                .filter(|s| !s.is_empty())
+        });
 
     // Compute merge-base if git is available
     let merge_base = compute_merge_base(root, base_ref.as_deref());
 
     // Use GitHub event SHA if available, otherwise query git
-    let head_sha = gh_event.head_sha.clone()
+    let head_sha = gh_event
+        .head_sha
+        .clone()
         .or_else(|| std::env::var("GITHUB_SHA").ok().filter(|s| !s.is_empty()))
         .or_else(|| git(root, &["rev-parse", "HEAD"]));
 
@@ -518,8 +557,14 @@ mod tests {
 
         assert_eq!(result.pr_number, Some(42));
         assert_eq!(result.base_ref, Some("main".to_string()));
-        assert_eq!(result.base_sha, Some("abc123def456789012345678901234567890abcd".to_string()));
-        assert_eq!(result.head_sha, Some("def456abc789012345678901234567890abcdef12".to_string()));
+        assert_eq!(
+            result.base_sha,
+            Some("abc123def456789012345678901234567890abcd".to_string())
+        );
+        assert_eq!(
+            result.head_sha,
+            Some("def456abc789012345678901234567890abcdef12".to_string())
+        );
     }
 
     #[test]
@@ -604,8 +649,14 @@ mod tests {
 
         assert_eq!(result.pr_number, Some(42));
         assert_eq!(result.base_ref, Some("main".to_string()));
-        assert_eq!(result.base_sha, Some("abc123def456789012345678901234567890abcd".to_string()));
-        assert_eq!(result.head_sha, Some("def456abc789012345678901234567890abcdef12".to_string()));
+        assert_eq!(
+            result.base_sha,
+            Some("abc123def456789012345678901234567890abcd".to_string())
+        );
+        assert_eq!(
+            result.head_sha,
+            Some("def456abc789012345678901234567890abcdef12".to_string())
+        );
     }
 
     #[test]
@@ -638,7 +689,10 @@ mod tests {
         assert_eq!(result.pr_number, Some(123));
         assert_eq!(result.base_ref, Some("develop".to_string()));
         assert_eq!(result.base_sha, None); // Missing in fixture
-        assert_eq!(result.head_sha, Some("partial123456789012345678901234567890abcd".to_string()));
+        assert_eq!(
+            result.head_sha,
+            Some("partial123456789012345678901234567890abcd".to_string())
+        );
     }
 
     #[test]

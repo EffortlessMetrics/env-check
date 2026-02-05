@@ -474,7 +474,10 @@ fn parse_all_includes_hash_manifests() {
         .sources_used
         .iter()
         .any(|s| s.kind == SourceKind::HashManifest));
-    assert!(parsed.requirements.iter().any(|r| r.tool.starts_with("file:")));
+    assert!(parsed
+        .requirements
+        .iter()
+        .any(|r| r.tool.starts_with("file:")));
 }
 
 #[test]

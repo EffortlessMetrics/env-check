@@ -120,7 +120,8 @@ pub fn parse_all(root: &Path, hash_manifests: &[PathBuf]) -> ParsedSources {
     }
 
     // Normalize ordering for determinism.
-    out.requirements.sort_by(|a, b| a.tool.cmp(&b.tool).then(a.source.path.cmp(&b.source.path)));
+    out.requirements
+        .sort_by(|a, b| a.tool.cmp(&b.tool).then(a.source.path.cmp(&b.source.path)));
 
     out
 }
@@ -149,7 +150,11 @@ pub fn parse_tool_versions(root: &Path, path: &Path) -> anyhow::Result<Vec<Requi
     parse_tool_versions_str(root, path, &text)
 }
 
-pub fn parse_tool_versions_str(root: &Path, path: &Path, text: &str) -> anyhow::Result<Vec<Requirement>> {
+pub fn parse_tool_versions_str(
+    root: &Path,
+    path: &Path,
+    text: &str,
+) -> anyhow::Result<Vec<Requirement>> {
     let mut out = vec![];
 
     for (idx, line) in text.lines().enumerate() {
@@ -190,7 +195,11 @@ pub fn parse_mise_toml(root: &Path, path: &Path) -> anyhow::Result<Vec<Requireme
     parse_mise_toml_str(root, path, &text)
 }
 
-pub fn parse_mise_toml_str(root: &Path, path: &Path, text: &str) -> anyhow::Result<Vec<Requirement>> {
+pub fn parse_mise_toml_str(
+    root: &Path,
+    path: &Path,
+    text: &str,
+) -> anyhow::Result<Vec<Requirement>> {
     let value: toml::Value = toml::from_str(text).with_context(|| "parse toml")?;
 
     let tools = value
@@ -210,7 +219,7 @@ pub fn parse_mise_toml_str(root: &Path, path: &Path, text: &str) -> anyhow::Resu
             toml::Value::Integer(i) => Some(i.to_string()),
             toml::Value::Array(arr) => {
                 // Keep the first entry as the constraint, capture the full shape in data later.
-                arr.get(0).and_then(|x| x.as_str()).map(|s| s.to_string())
+                arr.first().and_then(|x| x.as_str()).map(|s| s.to_string())
             }
             _ => None,
         };
@@ -237,8 +246,14 @@ pub fn parse_rust_toolchain(root: &Path, path: &Path) -> anyhow::Result<Vec<Requ
     parse_rust_toolchain_str(root, path, &text)
 }
 
-pub fn parse_rust_toolchain_str(root: &Path, path: &Path, text: &str) -> anyhow::Result<Vec<Requirement>> {
-    if path.file_name().and_then(|n| n.to_str()) == Some("rust-toolchain") && !text.trim_start().starts_with('[') {
+pub fn parse_rust_toolchain_str(
+    root: &Path,
+    path: &Path,
+    text: &str,
+) -> anyhow::Result<Vec<Requirement>> {
+    if path.file_name().and_then(|n| n.to_str()) == Some("rust-toolchain")
+        && !text.trim_start().starts_with('[')
+    {
         // Legacy format: single string channel/version.
         let channel = text.trim().to_string();
         return Ok(vec![Requirement {
@@ -283,7 +298,11 @@ pub fn parse_hash_manifest(root: &Path, path: &Path) -> anyhow::Result<Vec<Requi
     parse_hash_manifest_str(root, path, &text)
 }
 
-pub fn parse_hash_manifest_str(root: &Path, path: &Path, text: &str) -> anyhow::Result<Vec<Requirement>> {
+pub fn parse_hash_manifest_str(
+    root: &Path,
+    path: &Path,
+    text: &str,
+) -> anyhow::Result<Vec<Requirement>> {
     let mut out = vec![];
 
     for (idx, line) in text.lines().enumerate() {
@@ -303,7 +322,10 @@ pub fn parse_hash_manifest_str(root: &Path, path: &Path, text: &str) -> anyhow::
 
         // Keep it repo-relative; don't allow absolute paths.
         if rel_path.starts_with('/') || rel_path.contains(':') {
-            return Err(anyhow::anyhow!("hash manifest path must be repo-relative: {}", rel_path));
+            return Err(anyhow::anyhow!(
+                "hash manifest path must be repo-relative: {}",
+                rel_path
+            ));
         }
 
         out.push(Requirement {

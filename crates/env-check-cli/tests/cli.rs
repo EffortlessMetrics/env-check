@@ -41,7 +41,9 @@ fn env_check_cmd() -> Command {
 fn help_works() {
     let mut cmd = env_check_cmd();
     cmd.arg("--help");
-    cmd.assert().success().stdout(predicate::str::contains("env-check"));
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("env-check"));
 }
 
 #[test]
@@ -209,7 +211,7 @@ fn md_command_with_positional_argument() {
     // Then render markdown using positional argument (not --report flag)
     let mut cmd = env_check_cmd();
     cmd.arg("md")
-        .arg(&report_path)  // positional argument
+        .arg(&report_path) // positional argument
         .arg("--out")
         .arg(&md_path);
     cmd.assert().success();
@@ -239,9 +241,9 @@ fn md_command_positional_takes_precedence() {
     // Here we provide a valid positional and invalid --report; should succeed
     let mut cmd = env_check_cmd();
     cmd.arg("md")
-        .arg(&report_path)  // valid positional argument
+        .arg(&report_path) // valid positional argument
         .arg("--report")
-        .arg(&fake_path)    // invalid flag argument (would fail if used)
+        .arg(&fake_path) // invalid flag argument (would fail if used)
         .arg("--out")
         .arg(&md_path);
     cmd.assert().success();
@@ -256,9 +258,7 @@ fn md_command_requires_report_argument() {
 
     // md command without any report argument should fail
     let mut cmd = env_check_cmd();
-    cmd.arg("md")
-        .arg("--out")
-        .arg(&md_path);
+    cmd.arg("md").arg("--out").arg(&md_path);
     cmd.assert().failure();
 }
 
@@ -283,18 +283,14 @@ fn explain_unknown_code() {
 #[test]
 fn invalid_profile_fails() {
     let mut cmd = env_check_cmd();
-    cmd.arg("check")
-        .arg("--profile")
-        .arg("invalid");
+    cmd.arg("check").arg("--profile").arg("invalid");
     cmd.assert().failure();
 }
 
 #[test]
 fn invalid_fail_on_fails() {
     let mut cmd = env_check_cmd();
-    cmd.arg("check")
-        .arg("--fail-on")
-        .arg("invalid");
+    cmd.arg("check").arg("--fail-on").arg("invalid");
     cmd.assert().failure();
 }
 
@@ -317,21 +313,33 @@ fn runtime_error_writes_receipt_and_exits_one() {
 
     cmd.assert().code(1);
 
-    assert!(out_path.exists(), "Report should be written on runtime errors");
+    assert!(
+        out_path.exists(),
+        "Report should be written on runtime errors"
+    );
     let content = fs::read_to_string(&out_path).unwrap();
     let json: Value = serde_json::from_str(&content).unwrap();
 
     assert_eq!(json["verdict"]["status"].as_str().unwrap(), "fail");
     let reasons = json["verdict"]["reasons"].as_array().unwrap();
     assert!(reasons.iter().any(|r| r.as_str() == Some("tool_error")));
-    let finding = json["findings"].as_array().unwrap().get(0).expect("Missing finding");
+    let finding = json["findings"]
+        .as_array()
+        .unwrap()
+        .first()
+        .expect("Missing finding");
     assert_eq!(finding["code"].as_str().unwrap(), "tool.runtime_error");
 
     let schema = envelope_schema();
     let validation = schema.validate(&json);
     if let Err(errors) = validation {
-        let messages: Vec<String> = errors.map(|e| format!("{}: {}", e.instance_path, e)).collect();
-        panic!("runtime error receipt failed envelope validation:\n{}", messages.join("\n"));
+        let messages: Vec<String> = errors
+            .map(|e| format!("{}: {}", e.instance_path, e))
+            .collect();
+        panic!(
+            "runtime error receipt failed envelope validation:\n{}",
+            messages.join("\n")
+        );
     }
 }
 
@@ -466,7 +474,10 @@ fn report_json_is_created_at_specified_path() {
 
     cmd.assert().success();
 
-    assert!(custom_path.exists(), "Report should be created at custom path");
+    assert!(
+        custom_path.exists(),
+        "Report should be created at custom path"
+    );
 }
 
 #[test]
@@ -487,10 +498,19 @@ fn report_json_has_valid_structure() {
     let json: Value = serde_json::from_str(&content).expect("Report should be valid JSON");
 
     // Verify required top-level fields
-    assert!(json.get("schema").is_some(), "Report should have 'schema' field");
-    assert!(json.get("tool").is_some(), "Report should have 'tool' field");
+    assert!(
+        json.get("schema").is_some(),
+        "Report should have 'schema' field"
+    );
+    assert!(
+        json.get("tool").is_some(),
+        "Report should have 'tool' field"
+    );
     assert!(json.get("run").is_some(), "Report should have 'run' field");
-    assert!(json.get("verdict").is_some(), "Report should have 'verdict' field");
+    assert!(
+        json.get("verdict").is_some(),
+        "Report should have 'verdict' field"
+    );
 
     // Verify schema value
     assert_eq!(
@@ -500,15 +520,30 @@ fn report_json_has_valid_structure() {
     );
 
     // Verify tool structure
-    assert!(json["tool"].get("name").is_some(), "Tool should have 'name'");
-    assert!(json["tool"].get("version").is_some(), "Tool should have 'version'");
+    assert!(
+        json["tool"].get("name").is_some(),
+        "Tool should have 'name'"
+    );
+    assert!(
+        json["tool"].get("version").is_some(),
+        "Tool should have 'version'"
+    );
 
     // Verify run structure
-    assert!(json["run"].get("started_at").is_some(), "Run should have 'started_at'");
+    assert!(
+        json["run"].get("started_at").is_some(),
+        "Run should have 'started_at'"
+    );
 
     // Verify verdict structure
-    assert!(json["verdict"].get("status").is_some(), "Verdict should have 'status'");
-    assert!(json["verdict"].get("counts").is_some(), "Verdict should have 'counts'");
+    assert!(
+        json["verdict"].get("status").is_some(),
+        "Verdict should have 'status'"
+    );
+    assert!(
+        json["verdict"].get("counts").is_some(),
+        "Verdict should have 'counts'"
+    );
 }
 
 #[test]
@@ -531,8 +566,13 @@ fn report_json_matches_envelope_schema() {
     let schema = envelope_schema();
     let validation = schema.validate(&json);
     if let Err(errors) = validation {
-        let messages: Vec<String> = errors.map(|e| format!("{}: {}", e.instance_path, e)).collect();
-        panic!("report.json failed envelope validation:\n{}", messages.join("\n"));
+        let messages: Vec<String> = errors
+            .map(|e| format!("{}: {}", e.instance_path, e))
+            .collect();
+        panic!(
+            "report.json failed envelope validation:\n{}",
+            messages.join("\n")
+        );
     }
 }
 
@@ -556,14 +596,25 @@ fn report_json_contains_findings_for_missing_tool() {
     let json: Value = serde_json::from_str(&content).unwrap();
 
     // Verify findings array exists and has content
-    let findings = json["findings"].as_array().expect("Findings should be an array");
-    assert!(!findings.is_empty(), "Findings should not be empty for missing tool");
+    let findings = json["findings"]
+        .as_array()
+        .expect("Findings should be an array");
+    assert!(
+        !findings.is_empty(),
+        "Findings should not be empty for missing tool"
+    );
 
     // Verify finding structure
     let finding = &findings[0];
-    assert!(finding.get("severity").is_some(), "Finding should have 'severity'");
+    assert!(
+        finding.get("severity").is_some(),
+        "Finding should have 'severity'"
+    );
     assert!(finding.get("code").is_some(), "Finding should have 'code'");
-    assert!(finding.get("message").is_some(), "Finding should have 'message'");
+    assert!(
+        finding.get("message").is_some(),
+        "Finding should have 'message'"
+    );
 
     // Verify finding code for missing tool
     assert_eq!(
@@ -613,7 +664,10 @@ fn markdown_not_created_without_md_flag() {
 
     cmd.assert().success();
 
-    assert!(!md_path.exists(), "Markdown file should not be created without --md flag");
+    assert!(
+        !md_path.exists(),
+        "Markdown file should not be created without --md flag"
+    );
 }
 
 #[test]
@@ -640,7 +694,10 @@ fn md_command_creates_markdown_from_existing_report() {
         .arg(&md_path);
     cmd.assert().success();
 
-    assert!(md_path.exists(), "Markdown file should be created by md command");
+    assert!(
+        md_path.exists(),
+        "Markdown file should be created by md command"
+    );
     let md_content = fs::read_to_string(&md_path).unwrap();
     assert!(
         md_content.contains("## env-check:"),
@@ -1033,9 +1090,18 @@ fn report_is_deterministic_for_same_input() {
     let json2: Value = serde_json::from_str(&content2).unwrap();
 
     // Compare verdicts and findings (timestamps will differ)
-    assert_eq!(json1["verdict"], json2["verdict"], "Verdicts should be deterministic");
-    assert_eq!(json1["findings"], json2["findings"], "Findings should be deterministic");
-    assert_eq!(json1["schema"], json2["schema"], "Schema should be deterministic");
+    assert_eq!(
+        json1["verdict"], json2["verdict"],
+        "Verdicts should be deterministic"
+    );
+    assert_eq!(
+        json1["findings"], json2["findings"],
+        "Findings should be deterministic"
+    );
+    assert_eq!(
+        json1["schema"], json2["schema"],
+        "Schema should be deterministic"
+    );
 }
 
 // =============================================================================
@@ -1056,10 +1122,7 @@ fn valid_tools_fixture_produces_report() {
 
     // Should complete without crashing
     let output = cmd.output().expect("Command should execute");
-    assert!(
-        output.status.code().is_some(),
-        "Command should complete"
-    );
+    assert!(output.status.code().is_some(), "Command should complete");
 
     // Report should be created
     assert!(out_path.exists(), "Report should be created");

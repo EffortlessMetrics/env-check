@@ -1,9 +1,9 @@
+use chrono::Utc;
 use env_check_render::render_markdown;
 use env_check_types::{
     CiMeta, Counts, Finding, GitMeta, HostMeta, Location, ReceiptEnvelope, RunMeta, Severity,
     ToolMeta, Verdict, VerdictStatus,
 };
-use chrono::Utc;
 use serde_json::json;
 
 fn make_receipt(
@@ -217,7 +217,9 @@ fn render_fail_with_errors() {
                 data: None,
             },
         ],
-        Some(json!({"profile": "team", "fail_on": "error", "sources_used": ["rust-toolchain.toml", ".tool-versions"]})),
+        Some(
+            json!({"profile": "team", "fail_on": "error", "sources_used": ["rust-toolchain.toml", ".tool-versions"]}),
+        ),
     );
     let md = render_markdown(&receipt);
     insta::assert_snapshot!(md);
@@ -327,12 +329,7 @@ fn render_verdict_skip_simple() {
 
 #[test]
 fn render_no_findings_empty() {
-    let receipt = make_receipt(
-        VerdictStatus::Pass,
-        Counts::default(),
-        vec![],
-        None,
-    );
+    let receipt = make_receipt(VerdictStatus::Pass, Counts::default(), vec![], None);
     let md = render_markdown(&receipt);
     insta::assert_snapshot!(md);
 }
@@ -361,7 +358,9 @@ fn render_single_error_finding() {
             fingerprint: Some("abc123".into()),
             data: Some(json!({"expected": "1.75.0", "found": null})),
         }],
-        Some(json!({"profile": "strict", "fail_on": "error", "sources_used": ["rust-toolchain.toml"]})),
+        Some(
+            json!({"profile": "strict", "fail_on": "error", "sources_used": ["rust-toolchain.toml"]}),
+        ),
     );
     let md = render_markdown(&receipt);
     insta::assert_snapshot!(md);
@@ -776,9 +775,27 @@ fn render_findings_sorted_by_severity() {
             error: 1,
         },
         vec![
-            make_finding(Severity::Info, "env.info", "Info message", Some("a.txt"), None),
-            make_finding(Severity::Error, "env.error", "Error message", Some("b.txt"), None),
-            make_finding(Severity::Warn, "env.warn", "Warn message", Some("c.txt"), None),
+            make_finding(
+                Severity::Info,
+                "env.info",
+                "Info message",
+                Some("a.txt"),
+                None,
+            ),
+            make_finding(
+                Severity::Error,
+                "env.error",
+                "Error message",
+                Some("b.txt"),
+                None,
+            ),
+            make_finding(
+                Severity::Warn,
+                "env.warn",
+                "Warn message",
+                Some("c.txt"),
+                None,
+            ),
         ],
         Some(json!({"profile": "team", "sources_used": [".tool-versions"]})),
     );

@@ -1,17 +1,10 @@
+use env_check_sources::{
+    parse_go_mod_str, parse_hash_manifest_str, parse_mise_toml_str, parse_node_version_str,
+    parse_nvmrc_str, parse_package_json_str, parse_pyproject_toml_str, parse_python_version_str,
+    parse_rust_toolchain_str, parse_tool_versions_str,
+};
 use proptest::prelude::*;
 use std::path::Path;
-use env_check_sources::{
-    parse_tool_versions_str,
-    parse_mise_toml_str,
-    parse_rust_toolchain_str,
-    parse_hash_manifest_str,
-    parse_python_version_str,
-    parse_pyproject_toml_str,
-    parse_node_version_str,
-    parse_nvmrc_str,
-    parse_package_json_str,
-    parse_go_mod_str,
-};
 
 // =============================================================================
 // .tool-versions Property Tests

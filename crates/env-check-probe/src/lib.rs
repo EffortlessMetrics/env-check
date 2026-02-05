@@ -10,7 +10,9 @@ use std::process::Command;
 use std::sync::Mutex;
 
 use anyhow::Context;
-use env_check_types::{EnvCheckError, HashAlgo, Observation, ProbeKind, ProbeRecord, Requirement, VersionObservation};
+use env_check_types::{
+    EnvCheckError, HashAlgo, Observation, ProbeKind, ProbeRecord, Requirement, VersionObservation,
+};
 use regex::Regex;
 
 pub trait CommandRunner: Send + Sync {
@@ -36,7 +38,9 @@ impl CommandRunner for OsCommandRunner {
         cmd.args(&argv[1..]);
         cmd.current_dir(cwd);
 
-        let out = cmd.output().map_err(|e| EnvCheckError::Runtime(e.to_string()))?;
+        let out = cmd
+            .output()
+            .map_err(|e| EnvCheckError::Runtime(e.to_string()))?;
         Ok(CmdOutput {
             exit: out.status.code(),
             stdout: String::from_utf8_lossy(&out.stdout).to_string(),
@@ -86,8 +90,14 @@ pub struct Prober<R: CommandRunner, P: PathResolver, H: Hasher> {
 impl<R: CommandRunner, P: PathResolver, H: Hasher> Prober<R, P, H> {
     pub fn new(runner: R, path: P, hasher: H) -> anyhow::Result<Self> {
         // Conservative semver-ish matcher. We intentionally don't parse prerelease/build.
-        let version_re = Regex::new(r"(\d+)(?:\.(\d+))?(?:\.(\d+))?").context("compile version regex")?;
-        Ok(Self { runner, path, hasher, version_re })
+        let version_re =
+            Regex::new(r"(\d+)(?:\.(\d+))?(?:\.(\d+))?").context("compile version regex")?;
+        Ok(Self {
+            runner,
+            path,
+            hasher,
+            version_re,
+        })
     }
 
     pub fn probe(&self, root: &Path, req: &Requirement) -> Observation {
@@ -123,7 +133,10 @@ impl<R: CommandRunner, P: PathResolver, H: Hasher> Prober<R, P, H> {
                 }
                 Err(e) => {
                     record.stderr = e.to_string();
-                    Some(VersionObservation { parsed: None, raw: e.to_string() })
+                    Some(VersionObservation {
+                        parsed: None,
+                        raw: e.to_string(),
+                    })
                 }
             }
         } else {
@@ -143,7 +156,11 @@ impl<R: CommandRunner, P: PathResolver, H: Hasher> Prober<R, P, H> {
         // We treat rustup itself as the transport. If rustup isn't available, present=false.
         let present = self.path.resolve("rustup").is_some();
 
-        let argv = vec!["rustup".to_string(), "toolchain".to_string(), "list".to_string()];
+        let argv = vec![
+            "rustup".to_string(),
+            "toolchain".to_string(),
+            "list".to_string(),
+        ];
         let mut record = ProbeRecord {
             cmd: argv.clone(),
             exit: None,
@@ -167,7 +184,10 @@ impl<R: CommandRunner, P: PathResolver, H: Hasher> Prober<R, P, H> {
                 }
                 Err(e) => {
                     record.stderr = e.to_string();
-                    Some(VersionObservation { parsed: req.constraint.clone(), raw: e.to_string() })
+                    Some(VersionObservation {
+                        parsed: req.constraint.clone(),
+                        raw: e.to_string(),
+                    })
                 }
             }
         } else {
@@ -304,7 +324,7 @@ impl<R: CommandRunner, W: DebugLogWriter> LoggingCommandRunner<R, W> {
     pub fn new(inner: R, writer: W) -> Self {
         // Write header
         let timestamp = chrono::Utc::now().to_rfc3339();
-        writer.write_line(&format!("# env-check probe debug log"));
+        writer.write_line("# env-check probe debug log");
         writer.write_line(&format!("# started: {}", timestamp));
         writer.write_line("");
         Self { inner, writer }
@@ -316,25 +336,29 @@ impl<R: CommandRunner, W: DebugLogWriter> CommandRunner for LoggingCommandRunner
         let timestamp = chrono::Utc::now().to_rfc3339();
         let cmd_str = argv.join(" ");
 
-        self.writer.write_line(&format!("[{}] EXEC: {}", timestamp, cmd_str));
+        self.writer
+            .write_line(&format!("[{}] EXEC: {}", timestamp, cmd_str));
         self.writer.write_line(&format!("  cwd: {}", cwd.display()));
 
         let result = self.inner.run(cwd, argv);
 
         match &result {
             Ok(output) => {
-                self.writer.write_line(&format!("  exit: {:?}", output.exit));
+                self.writer
+                    .write_line(&format!("  exit: {:?}", output.exit));
 
                 // Log stdout (truncated if long)
                 let stdout_preview = truncate_for_log(&output.stdout, 200);
                 if !stdout_preview.is_empty() {
-                    self.writer.write_line(&format!("  stdout: {}", stdout_preview));
+                    self.writer
+                        .write_line(&format!("  stdout: {}", stdout_preview));
                 }
 
                 // Log stderr (truncated if long)
                 let stderr_preview = truncate_for_log(&output.stderr, 200);
                 if !stderr_preview.is_empty() {
-                    self.writer.write_line(&format!("  stderr: {}", stderr_preview));
+                    self.writer
+                        .write_line(&format!("  stderr: {}", stderr_preview));
                 }
             }
             Err(e) => {
@@ -351,7 +375,8 @@ impl<R: CommandRunner, W: DebugLogWriter> CommandRunner for LoggingCommandRunner
 
 /// Truncate a string for logging purposes, replacing newlines and limiting length.
 fn truncate_for_log(s: &str, max_len: usize) -> String {
-    let cleaned: String = s.chars()
+    let cleaned: String = s
+        .chars()
         .map(|c| if c == '\n' || c == '\r' { ' ' } else { c })
         .collect();
     let trimmed = cleaned.trim();
@@ -419,15 +444,11 @@ pub mod fakes {
             if argv.is_empty() {
                 return Err(EnvCheckError::Runtime("empty argv".into()));
             }
-            Ok(self
-                .responses
-                .get(&argv[0])
-                .cloned()
-                .unwrap_or(CmdOutput {
-                    exit: Some(127),
-                    stdout: String::new(),
-                    stderr: format!("command not found: {}", argv[0]),
-                }))
+            Ok(self.responses.get(&argv[0]).cloned().unwrap_or(CmdOutput {
+                exit: Some(127),
+                stdout: String::new(),
+                stderr: format!("command not found: {}", argv[0]),
+            }))
         }
     }
 
@@ -467,8 +488,8 @@ pub mod fakes {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::fakes::*;
+    use super::*;
     use env_check_types::{HashAlgo, HashSpec, ProbeKind, Requirement, SourceKind, SourceRef};
     use proptest::prelude::*;
 
@@ -507,19 +528,24 @@ mod tests {
     #[test]
     fn version_extraction_picks_first_numeric() {
         let re = Regex::new(r"(\d+)(?:\.(\d+))?(?:\.(\d+))?").unwrap();
-        assert_eq!(extract_version(&re, "node v20.11.0 (foo)"), Some("20.11.0".into()));
+        assert_eq!(
+            extract_version(&re, "node v20.11.0 (foo)"),
+            Some("20.11.0".into())
+        );
         assert_eq!(extract_version(&re, "no digits here"), None);
     }
 
     #[test]
     fn probe_path_tool_present() {
         let path_resolver = FakePathResolver::new(["node"]);
-        let cmd_runner = FakeCommandRunner::new()
-            .with_response("node", CmdOutput {
+        let cmd_runner = FakeCommandRunner::new().with_response(
+            "node",
+            CmdOutput {
                 exit: Some(0),
                 stdout: "v20.11.0".to_string(),
                 stderr: String::new(),
-            });
+            },
+        );
         let hasher = FakeHasher::new();
 
         let prober = Prober::new(cmd_runner, path_resolver, hasher).unwrap();
@@ -528,7 +554,10 @@ mod tests {
 
         assert!(obs.present);
         assert!(obs.version.is_some());
-        assert_eq!(obs.version.as_ref().unwrap().parsed, Some("20.11.0".to_string()));
+        assert_eq!(
+            obs.version.as_ref().unwrap().parsed,
+            Some("20.11.0".to_string())
+        );
     }
 
     #[test]
@@ -548,38 +577,48 @@ mod tests {
     #[test]
     fn probe_extracts_version_from_stdout() {
         let path_resolver = FakePathResolver::new(["node"]);
-        let cmd_runner = FakeCommandRunner::new()
-            .with_response("node", CmdOutput {
+        let cmd_runner = FakeCommandRunner::new().with_response(
+            "node",
+            CmdOutput {
                 exit: Some(0),
                 stdout: "node v20.11.0 (LTS)".to_string(),
                 stderr: String::new(),
-            });
+            },
+        );
         let hasher = FakeHasher::new();
 
         let prober = Prober::new(cmd_runner, path_resolver, hasher).unwrap();
         let req = make_req("node", ProbeKind::PathTool);
         let obs = prober.probe(Path::new("/repo"), &req);
 
-        assert_eq!(obs.version.as_ref().unwrap().parsed, Some("20.11.0".to_string()));
+        assert_eq!(
+            obs.version.as_ref().unwrap().parsed,
+            Some("20.11.0".to_string())
+        );
     }
 
     #[test]
     fn probe_extracts_version_from_stderr() {
         // Some tools print version to stderr
         let path_resolver = FakePathResolver::new(["java"]);
-        let cmd_runner = FakeCommandRunner::new()
-            .with_response("java", CmdOutput {
+        let cmd_runner = FakeCommandRunner::new().with_response(
+            "java",
+            CmdOutput {
                 exit: Some(0),
                 stdout: String::new(),
                 stderr: "openjdk version \"17.0.1\" 2021-10-19".to_string(),
-            });
+            },
+        );
         let hasher = FakeHasher::new();
 
         let prober = Prober::new(cmd_runner, path_resolver, hasher).unwrap();
         let req = make_req("java", ProbeKind::PathTool);
         let obs = prober.probe(Path::new("/repo"), &req);
 
-        assert_eq!(obs.version.as_ref().unwrap().parsed, Some("17.0.1".to_string()));
+        assert_eq!(
+            obs.version.as_ref().unwrap().parsed,
+            Some("17.0.1".to_string())
+        );
     }
 
     #[test]
@@ -660,7 +699,11 @@ mod tests {
 
         let prober = Prober::new(cmd_runner, path_resolver, hasher).unwrap();
         // Use a wrong hash
-        let req = make_hash_req("file:scripts/tool.sh", "scripts/tool.sh", "0000000000000000000000000000000000000000000000000000000000000000");
+        let req = make_hash_req(
+            "file:scripts/tool.sh",
+            "scripts/tool.sh",
+            "0000000000000000000000000000000000000000000000000000000000000000",
+        );
         let obs = prober.probe(temp_dir.path(), &req);
 
         assert!(obs.present);
@@ -755,38 +798,49 @@ mod tests {
         let _runner = LoggingCommandRunner::new(inner, &writer);
 
         let lines = writer.get_lines();
-        assert!(lines.iter().any(|l| l.contains("# env-check probe debug log")));
+        assert!(lines
+            .iter()
+            .any(|l| l.contains("# env-check probe debug log")));
         assert!(lines.iter().any(|l| l.contains("# started:")));
     }
 
     #[test]
     fn logging_runner_logs_command_execution() {
-        let inner = FakeCommandRunner::new()
-            .with_response("test-tool", CmdOutput {
+        let inner = FakeCommandRunner::new().with_response(
+            "test-tool",
+            CmdOutput {
                 exit: Some(0),
                 stdout: "output here".to_string(),
                 stderr: String::new(),
-            });
+            },
+        );
         let writer = TestLogWriter::new();
         let runner = LoggingCommandRunner::new(inner, &writer);
 
-        let _ = runner.run(Path::new("/repo"), &["test-tool".to_string(), "--version".to_string()]);
+        let _ = runner.run(
+            Path::new("/repo"),
+            &["test-tool".to_string(), "--version".to_string()],
+        );
 
         let lines = writer.get_lines();
 
         // Should log the command
-        assert!(lines.iter().any(|l| l.contains("EXEC:") && l.contains("test-tool")));
+        assert!(lines
+            .iter()
+            .any(|l| l.contains("EXEC:") && l.contains("test-tool")));
         // Should log the cwd
         assert!(lines.iter().any(|l| l.contains("cwd:")));
         // Should log the exit code
         assert!(lines.iter().any(|l| l.contains("exit:") && l.contains("0")));
         // Should log stdout
-        assert!(lines.iter().any(|l| l.contains("stdout:") && l.contains("output here")));
+        assert!(lines
+            .iter()
+            .any(|l| l.contains("stdout:") && l.contains("output here")));
     }
 
     #[test]
     fn logging_runner_logs_errors() {
-        let inner = FakeCommandRunner::new();  // No response configured = error
+        let inner = FakeCommandRunner::new(); // No response configured = error
         let writer = TestLogWriter::new();
         let runner = LoggingCommandRunner::new(inner, &writer);
 
@@ -796,7 +850,9 @@ mod tests {
         assert!(result.is_ok()); // FakeCommandRunner returns "command not found" as success with exit 127
 
         let lines = writer.get_lines();
-        assert!(lines.iter().any(|l| l.contains("EXEC:") && l.contains("nonexistent")));
+        assert!(lines
+            .iter()
+            .any(|l| l.contains("EXEC:") && l.contains("nonexistent")));
     }
 
     #[test]
@@ -823,16 +879,20 @@ mod tests {
 
     #[test]
     fn logging_runner_does_not_affect_result() {
-        let inner = FakeCommandRunner::new()
-            .with_response("tool", CmdOutput {
+        let inner = FakeCommandRunner::new().with_response(
+            "tool",
+            CmdOutput {
                 exit: Some(42),
                 stdout: "stdout content".to_string(),
                 stderr: "stderr content".to_string(),
-            });
+            },
+        );
         let writer = TestLogWriter::new();
         let runner = LoggingCommandRunner::new(inner, &writer);
 
-        let result = runner.run(Path::new("/repo"), &["tool".to_string()]).unwrap();
+        let result = runner
+            .run(Path::new("/repo"), &["tool".to_string()])
+            .unwrap();
 
         // Verify the result is unchanged
         assert_eq!(result.exit, Some(42));

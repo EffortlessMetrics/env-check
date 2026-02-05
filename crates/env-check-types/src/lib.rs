@@ -190,9 +190,9 @@ pub enum SourceKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProbeKind {
-    PathTool,         // `<tool> --version`
-    RustupToolchain,  // `rustup toolchain list` + rust-toolchain
-    FileHash,         // sha256 on repo-local file
+    PathTool,        // `<tool> --version`
+    RustupToolchain, // `rustup toolchain list` + rust-toolchain
+    FileHash,        // sha256 on repo-local file
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -297,7 +297,11 @@ pub mod checks {
 /// Sorting key used to ensure deterministic findings order.
 pub fn finding_sort_key(f: &Finding) -> (u8, String, String, String, String) {
     let sev = f.severity.rank();
-    let path = f.location.as_ref().map(|l| l.path.clone()).unwrap_or_default();
+    let path = f
+        .location
+        .as_ref()
+        .map(|l| l.path.clone())
+        .unwrap_or_default();
     let check_id = f.check_id.clone().unwrap_or_default();
     (sev, path, check_id, f.code.clone(), f.message.clone())
 }

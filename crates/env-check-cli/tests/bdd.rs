@@ -86,7 +86,13 @@ async fn when_run_explain(world: &mut EnvWorld, code: String) {
     world.stdout = Some(String::from_utf8_lossy(&out.stdout).to_string());
 }
 
-fn run_env_check(world: &mut EnvWorld, profile: &str, fail_on: Option<&str>, with_markdown: bool, with_debug: bool) {
+fn run_env_check(
+    world: &mut EnvWorld,
+    profile: &str,
+    fail_on: Option<&str>,
+    with_markdown: bool,
+    with_debug: bool,
+) {
     let root = world.repo_root.as_ref().expect("fixture root");
     let tmp = world.tmp.as_ref().expect("temp dir");
 
@@ -158,7 +164,10 @@ async fn then_exit_code(world: &mut EnvWorld, expected: i32) {
 
 #[then(expr = "the verdict status is {string}")]
 async fn then_verdict_status(world: &mut EnvWorld, expected: String) {
-    let report = world.report_json.as_ref().expect("report JSON should exist");
+    let report = world
+        .report_json
+        .as_ref()
+        .expect("report JSON should exist");
     let status = report
         .get("verdict")
         .and_then(|v| v.get("status"))
@@ -174,17 +183,17 @@ async fn then_verdict_status(world: &mut EnvWorld, expected: String) {
 
 #[then(expr = "the report contains sources {string} and {string}")]
 async fn then_report_contains_two_sources(world: &mut EnvWorld, source1: String, source2: String) {
-    let report = world.report_json.as_ref().expect("report JSON should exist");
+    let report = world
+        .report_json
+        .as_ref()
+        .expect("report JSON should exist");
     let sources = report
         .get("data")
         .and_then(|d| d.get("sources_used"))
         .and_then(|s| s.as_array())
         .expect("data.sources_used should be an array");
 
-    let sources_list: Vec<&str> = sources
-        .iter()
-        .filter_map(|v| v.as_str())
-        .collect();
+    let sources_list: Vec<&str> = sources.iter().filter_map(|v| v.as_str()).collect();
 
     assert!(
         sources_list.iter().any(|s| s.contains(&source1)),
@@ -202,17 +211,17 @@ async fn then_report_contains_two_sources(world: &mut EnvWorld, source1: String,
 
 #[then(expr = "the report contains source {string}")]
 async fn then_report_contains_source(world: &mut EnvWorld, source: String) {
-    let report = world.report_json.as_ref().expect("report JSON should exist");
+    let report = world
+        .report_json
+        .as_ref()
+        .expect("report JSON should exist");
     let sources = report
         .get("data")
         .and_then(|d| d.get("sources_used"))
         .and_then(|s| s.as_array())
         .expect("data.sources_used should be an array");
 
-    let sources_list: Vec<&str> = sources
-        .iter()
-        .filter_map(|v| v.as_str())
-        .collect();
+    let sources_list: Vec<&str> = sources.iter().filter_map(|v| v.as_str()).collect();
 
     assert!(
         sources_list.iter().any(|s| s.contains(&source)),
@@ -224,7 +233,10 @@ async fn then_report_contains_source(world: &mut EnvWorld, source: String) {
 
 #[then(expr = "the report contains finding code {string}")]
 async fn then_report_contains_finding_code(world: &mut EnvWorld, code: String) {
-    let report = world.report_json.as_ref().expect("report JSON should exist");
+    let report = world
+        .report_json
+        .as_ref()
+        .expect("report JSON should exist");
     let findings = report
         .get("findings")
         .and_then(|f| f.as_array())
@@ -245,19 +257,21 @@ async fn then_report_contains_finding_code(world: &mut EnvWorld, code: String) {
 
 #[then(expr = "the report JSON is valid against the envelope schema")]
 async fn then_report_valid_against_schema(world: &mut EnvWorld) {
-    let report = world.report_json.as_ref().expect("report JSON should exist");
+    let report = world
+        .report_json
+        .as_ref()
+        .expect("report JSON should exist");
 
     // Load the schema from the project root
-    let schema_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../schemas/receipt.envelope.v1.json");
+    let schema_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../schemas/receipt.envelope.v1.json");
 
-    let schema_bytes = fs::read(&schema_path)
-        .expect("failed to read schema file");
-    let schema_json: Value = serde_json::from_slice(&schema_bytes)
-        .expect("failed to parse schema JSON");
+    let schema_bytes = fs::read(&schema_path).expect("failed to read schema file");
+    let schema_json: Value =
+        serde_json::from_slice(&schema_bytes).expect("failed to parse schema JSON");
 
-    let compiled = jsonschema::JSONSchema::compile(&schema_json)
-        .expect("failed to compile JSON schema");
+    let compiled =
+        jsonschema::JSONSchema::compile(&schema_json).expect("failed to compile JSON schema");
 
     let result = compiled.validate(report);
     if let Err(errors) = result {
@@ -273,7 +287,10 @@ async fn then_report_valid_against_schema(world: &mut EnvWorld) {
 
 #[then(expr = "the markdown contains {string}")]
 async fn then_markdown_contains(world: &mut EnvWorld, expected: String) {
-    let markdown = world.markdown.as_ref().expect("markdown output should exist");
+    let markdown = world
+        .markdown
+        .as_ref()
+        .expect("markdown output should exist");
     assert!(
         markdown.contains(&expected),
         "expected markdown to contain '{}', got:\n{}",
@@ -305,7 +322,10 @@ async fn then_stdout_contains(world: &mut EnvWorld, expected: String) {
 
 #[then(expr = "the finding count is {int}")]
 async fn then_finding_count(world: &mut EnvWorld, expected: i32) {
-    let report = world.report_json.as_ref().expect("report JSON should exist");
+    let report = world
+        .report_json
+        .as_ref()
+        .expect("report JSON should exist");
     let findings = report
         .get("findings")
         .and_then(|f| f.as_array())
@@ -322,7 +342,10 @@ async fn then_finding_count(world: &mut EnvWorld, expected: i32) {
 
 #[then(expr = "the warning count is greater than {int}")]
 async fn then_warning_count_gt(world: &mut EnvWorld, min: i32) {
-    let report = world.report_json.as_ref().expect("report JSON should exist");
+    let report = world
+        .report_json
+        .as_ref()
+        .expect("report JSON should exist");
     let warn_count = report
         .get("verdict")
         .and_then(|v| v.get("counts"))
@@ -340,7 +363,10 @@ async fn then_warning_count_gt(world: &mut EnvWorld, min: i32) {
 
 #[then(expr = "the warning count is {int}")]
 async fn then_warning_count(world: &mut EnvWorld, expected: i32) {
-    let report = world.report_json.as_ref().expect("report JSON should exist");
+    let report = world
+        .report_json
+        .as_ref()
+        .expect("report JSON should exist");
     let warn_count = report
         .get("verdict")
         .and_then(|v| v.get("counts"))
@@ -357,7 +383,10 @@ async fn then_warning_count(world: &mut EnvWorld, expected: i32) {
 
 #[then(expr = "the error count is {int}")]
 async fn then_error_count(world: &mut EnvWorld, expected: i32) {
-    let report = world.report_json.as_ref().expect("report JSON should exist");
+    let report = world
+        .report_json
+        .as_ref()
+        .expect("report JSON should exist");
     let error_count = report
         .get("verdict")
         .and_then(|v| v.get("counts"))
@@ -374,7 +403,10 @@ async fn then_error_count(world: &mut EnvWorld, expected: i32) {
 
 #[then(expr = "the error count is greater than {int}")]
 async fn then_error_count_gt(world: &mut EnvWorld, min: i32) {
-    let report = world.report_json.as_ref().expect("report JSON should exist");
+    let report = world
+        .report_json
+        .as_ref()
+        .expect("report JSON should exist");
     let error_count = report
         .get("verdict")
         .and_then(|v| v.get("counts"))
@@ -392,7 +424,10 @@ async fn then_error_count_gt(world: &mut EnvWorld, min: i32) {
 
 #[then(expr = "the info count is {int}")]
 async fn then_info_count(world: &mut EnvWorld, expected: i32) {
-    let report = world.report_json.as_ref().expect("report JSON should exist");
+    let report = world
+        .report_json
+        .as_ref()
+        .expect("report JSON should exist");
     let info_count = report
         .get("verdict")
         .and_then(|v| v.get("counts"))
@@ -409,7 +444,10 @@ async fn then_info_count(world: &mut EnvWorld, expected: i32) {
 
 #[then(expr = "the verdict reasons contain {string}")]
 async fn then_verdict_reasons_contain(world: &mut EnvWorld, expected: String) {
-    let report = world.report_json.as_ref().expect("report JSON should exist");
+    let report = world
+        .report_json
+        .as_ref()
+        .expect("report JSON should exist");
     let reasons = report
         .get("verdict")
         .and_then(|v| v.get("reasons"))
@@ -427,7 +465,10 @@ async fn then_verdict_reasons_contain(world: &mut EnvWorld, expected: String) {
 
 #[then(expr = "the report data contains sources_used")]
 async fn then_report_data_contains_sources_used(world: &mut EnvWorld) {
-    let report = world.report_json.as_ref().expect("report JSON should exist");
+    let report = world
+        .report_json
+        .as_ref()
+        .expect("report JSON should exist");
     let sources = report
         .get("data")
         .and_then(|d| d.get("sources_used"))

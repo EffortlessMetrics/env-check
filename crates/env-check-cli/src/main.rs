@@ -7,7 +7,11 @@ use env_check_app::{run_check_with_options, write_atomic, CheckOptions};
 use env_check_types::{FailOn, Profile, ReceiptEnvelope};
 
 #[derive(Parser, Debug)]
-#[command(name = "env-check", version, about = "Machine-truth preflight for repo tool requirements")]
+#[command(
+    name = "env-check",
+    version,
+    about = "Machine-truth preflight for repo tool requirements"
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Command,
@@ -19,7 +23,9 @@ enum Command {
     ///
     /// Reads .tool-versions, .mise.toml, rust-toolchain.toml and other source files
     /// to determine required tools, then probes the local machine to verify they are installed.
-    #[command(after_help = "EXAMPLES:\n    env-check check\n    env-check check --profile team --root ./my-repo\n    env-check check --profile strict --md comment.md")]
+    #[command(
+        after_help = "EXAMPLES:\n    env-check check\n    env-check check --profile team --root ./my-repo\n    env-check check --profile strict --md comment.md"
+    )]
     Check {
         /// Repo root
         #[arg(long, default_value = ".")]
@@ -61,7 +67,9 @@ enum Command {
     /// Examples:
     ///   env-check md artifacts/env-check/report.json
     ///   env-check md --report artifacts/env-check/report.json --out comment.md
-    #[command(after_help = "EXAMPLES:\n    env-check md path/to/report.json\n    env-check md --report path/to/report.json --out comment.md")]
+    #[command(
+        after_help = "EXAMPLES:\n    env-check md path/to/report.json\n    env-check md --report path/to/report.json --out comment.md"
+    )]
     Md {
         /// Path to the report.json file (positional or via --report)
         #[arg(value_name = "REPORT")]
@@ -80,7 +88,9 @@ enum Command {
     ///
     /// Finding codes are stable identifiers that can be used in CI integrations
     /// to filter or handle specific types of findings.
-    #[command(after_help = "EXAMPLES:\n    env-check explain env.missing_tool\n    env-check explain env.version_mismatch\n\nAVAILABLE CODES:\n    env.missing_tool      - Tool not found on PATH\n    env.version_mismatch  - Version constraint not satisfied\n    env.hash_mismatch     - Binary hash doesn't match manifest\n    env.toolchain_missing - Rust toolchain not installed\n    env.source_parse_error - Source file parse error\n    tool.runtime_error    - Probe command execution failed")]
+    #[command(
+        after_help = "EXAMPLES:\n    env-check explain env.missing_tool\n    env-check explain env.version_mismatch\n\nAVAILABLE CODES:\n    env.missing_tool      - Tool not found on PATH\n    env.version_mismatch  - Version constraint not satisfied\n    env.hash_mismatch     - Binary hash doesn't match manifest\n    env.toolchain_missing - Rust toolchain not installed\n    env.source_parse_error - Source file parse error\n    tool.runtime_error    - Probe command execution failed"
+    )]
     Explain {
         /// The finding code to explain
         #[arg(value_name = "CODE")]
@@ -174,8 +184,14 @@ fn main() -> anyhow::Result<()> {
 
             let options = CheckOptions { debug_log_path };
 
-            match run_check_with_options(&root, config.as_deref(), profile.into(), fail_on.into(), options)
-                .with_context(|| "run env-check")
+            match run_check_with_options(
+                &root,
+                config.as_deref(),
+                profile.into(),
+                fail_on.into(),
+                options,
+            )
+            .with_context(|| "run env-check")
             {
                 Ok(output) => {
                     let json = serde_json::to_vec_pretty(&output.receipt)?;
@@ -205,14 +221,19 @@ fn main() -> anyhow::Result<()> {
                 }
             }
         }
-        Command::Md { report_positional, report_flag, out } => {
+        Command::Md {
+            report_positional,
+            report_flag,
+            out,
+        } => {
             // Positional argument takes precedence over --report flag
             let report = report_positional
                 .or(report_flag)
                 .ok_or_else(|| anyhow::anyhow!("missing required argument: REPORT or --report"))?;
 
             let bytes = fs::read(&report).with_context(|| format!("read {}", report.display()))?;
-            let receipt: ReceiptEnvelope = serde_json::from_slice(&bytes).with_context(|| "parse report.json")?;
+            let receipt: ReceiptEnvelope =
+                serde_json::from_slice(&bytes).with_context(|| "parse report.json")?;
             let md = env_check_render::render_markdown(&receipt);
             write_atomic(&out, md.as_bytes())?;
         }

@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-use anyhow::{Context, bail};
+use anyhow::{bail, Context};
 
 fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
@@ -66,8 +66,8 @@ fn schema_check() -> anyhow::Result<()> {
 
 fn load_schema_json(path: &str) -> anyhow::Result<serde_json::Value> {
     let schema_path = PathBuf::from(path);
-    let schema_bytes = fs::read(&schema_path)
-        .with_context(|| format!("read {}", schema_path.display()))?;
+    let schema_bytes =
+        fs::read(&schema_path).with_context(|| format!("read {}", schema_path.display()))?;
     serde_json::from_slice(&schema_bytes).context("parse schema json")
 }
 
@@ -85,14 +85,10 @@ fn validate_all_fixtures(
     Ok(())
 }
 
-fn validate_fixture(
-    path: &PathBuf,
-    envelope: &jsonschema::JSONSchema,
-) -> anyhow::Result<()> {
-    let bytes = fs::read(path)
-        .with_context(|| format!("read {}", path.display()))?;
-    let json: serde_json::Value = serde_json::from_slice(&bytes)
-        .with_context(|| format!("parse {}", path.display()))?;
+fn validate_fixture(path: &PathBuf, envelope: &jsonschema::JSONSchema) -> anyhow::Result<()> {
+    let bytes = fs::read(path).with_context(|| format!("read {}", path.display()))?;
+    let json: serde_json::Value =
+        serde_json::from_slice(&bytes).with_context(|| format!("parse {}", path.display()))?;
 
     // Validate against envelope schema
     let result = envelope.validate(&json);
@@ -238,14 +234,14 @@ fn mutants(extra_args: Vec<String>) -> anyhow::Result<()> {
     // Pass through any extra arguments from the user
     cmd.args(&extra_args);
 
-    eprintln!("Running: cargo mutants -p env-check-domain --timeout 60 --exclude-re 'bdd|integration' {}",
-        extra_args.join(" "));
+    eprintln!(
+        "Running: cargo mutants -p env-check-domain --timeout 60 --exclude-re 'bdd|integration' {}",
+        extra_args.join(" ")
+    );
     eprintln!();
 
     // Run and inherit stdio for live output
-    let status = cmd
-        .status()
-        .context("failed to run cargo mutants")?;
+    let status = cmd.status().context("failed to run cargo mutants")?;
 
     if !status.success() {
         // Exit with the same code as cargo-mutants
