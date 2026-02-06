@@ -170,7 +170,7 @@ Determinism requirements:
 
 env-check MUST be testable with a shared conformance harness that validates:
 
-- schema compliance (`receipt.envelope.v1`)
+- schema compliance (`sensor.report.v1`)
 - deterministic ordering (golden fixtures)
 - explain registry completeness for emitted codes
 

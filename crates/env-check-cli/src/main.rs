@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
-use env_check_app::{run_check_with_options, write_atomic, CheckOptions};
+use env_check_app::{CheckOptions, run_check_with_options, write_atomic};
 use env_check_types::{FailOn, Profile, ReceiptEnvelope};
 
 #[derive(Parser, Debug)]
@@ -290,12 +290,26 @@ fn main() -> anyhow::Result<()> {
 
 fn explain(code: &str) -> &'static str {
     match code {
-        "env.missing_tool" => "The tool is not on PATH. Install it and ensure the runner PATH includes its bin directory.",
-        "env.version_mismatch" => "The tool is present but its version does not satisfy the repo constraint. Install a compatible version or adjust the repo constraint.",
-        "env.hash_mismatch" => "A repo-local binary does not match the hash manifest. Re-fetch/restore the binary so it matches repo truth.",
-        "env.toolchain_missing" => "The repo requires a rust toolchain (rust-toolchain.toml), but rustup or the requested toolchain is missing. Install rustup and the requested toolchain.",
-        "env.source_parse_error" => "A supported source file exists but could not be parsed. Fix its syntax or remove it temporarily.",
-        "tool.runtime_error" => "env-check could not execute a probe command. Ensure the tool is executable and the runner allows process execution.",
-        _ => "Unknown code. If this code was emitted, the explain registry is missing an entry (bug).",
+        "env.missing_tool" => {
+            "The tool is not on PATH. Install it and ensure the runner PATH includes its bin directory."
+        }
+        "env.version_mismatch" => {
+            "The tool is present but its version does not satisfy the repo constraint. Install a compatible version or adjust the repo constraint."
+        }
+        "env.hash_mismatch" => {
+            "A repo-local binary does not match the hash manifest. Re-fetch/restore the binary so it matches repo truth."
+        }
+        "env.toolchain_missing" => {
+            "The repo requires a rust toolchain (rust-toolchain.toml), but rustup or the requested toolchain is missing. Install rustup and the requested toolchain."
+        }
+        "env.source_parse_error" => {
+            "A supported source file exists but could not be parsed. Fix its syntax or remove it temporarily."
+        }
+        "tool.runtime_error" => {
+            "env-check could not execute a probe command. Ensure the tool is executable and the runner allows process execution."
+        }
+        _ => {
+            "Unknown code. If this code was emitted, the explain registry is missing an entry (bug)."
+        }
     }
 }

@@ -845,9 +845,11 @@ mod tests {
         let _runner = LoggingCommandRunner::new(inner, &writer);
 
         let lines = writer.get_lines();
-        assert!(lines
-            .iter()
-            .any(|l| l.contains("# env-check probe debug log")));
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("# env-check probe debug log"))
+        );
         assert!(lines.iter().any(|l| l.contains("# started:")));
     }
 
@@ -872,17 +874,21 @@ mod tests {
         let lines = writer.get_lines();
 
         // Should log the command
-        assert!(lines
-            .iter()
-            .any(|l| l.contains("EXEC:") && l.contains("test-tool")));
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("EXEC:") && l.contains("test-tool"))
+        );
         // Should log the cwd
         assert!(lines.iter().any(|l| l.contains("cwd:")));
         // Should log the exit code
         assert!(lines.iter().any(|l| l.contains("exit:") && l.contains("0")));
         // Should log stdout
-        assert!(lines
-            .iter()
-            .any(|l| l.contains("stdout:") && l.contains("output here")));
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("stdout:") && l.contains("output here"))
+        );
     }
 
     #[test]
@@ -897,9 +903,11 @@ mod tests {
         assert!(result.is_ok()); // FakeCommandRunner returns "command not found" as success with exit 127
 
         let lines = writer.get_lines();
-        assert!(lines
-            .iter()
-            .any(|l| l.contains("EXEC:") && l.contains("nonexistent")));
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("EXEC:") && l.contains("nonexistent"))
+        );
     }
 
     #[test]

@@ -13,6 +13,9 @@ fuzz/Cargo.lock
 .idea/
 .vscode/
 
+# Windows artifacts
+nul
+
 # Test/Tool outputs
 artifacts/
 temp/

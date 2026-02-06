@@ -13,9 +13,9 @@ use env_check_probe::{
 };
 use env_check_sources::ParsedSources;
 use env_check_types::{
-    codes, Capabilities, CapabilityEntry, CapabilityStatus, CiMeta, Counts, FailOn, Finding,
-    GitMeta, HostMeta, Observation, PolicyConfig, Profile, ReceiptEnvelope, Requirement, RunMeta,
-    Severity, SourceKind, ToolMeta, Verdict, VerdictStatus, SCHEMA_ID, TOOL_NAME,
+    Capabilities, CapabilityEntry, CapabilityStatus, CiMeta, Counts, FailOn, Finding, GitMeta,
+    HostMeta, Observation, PolicyConfig, Profile, ReceiptEnvelope, Requirement, RunMeta, SCHEMA_ID,
+    Severity, SourceKind, TOOL_NAME, ToolMeta, Verdict, VerdictStatus, codes,
 };
 
 use serde::Deserialize;
@@ -238,8 +238,8 @@ fn build_data(
     requirements: &[Requirement],
     outcome: &DomainOutcome,
 ) -> serde_json::Value {
-    use std::collections::BTreeSet;
     use serde_json::json;
+    use std::collections::BTreeSet;
 
     let source_kinds: Vec<String> = parsed
         .sources_used
@@ -287,14 +287,14 @@ fn build_capabilities(
                 CapabilityStatus::Unavailable
             },
             reason: if git.is_none() {
-                Some("no git repository detected".into())
+                Some("not_a_git_repo".into())
             } else {
                 None
             },
         },
         baseline: CapabilityEntry {
             status: CapabilityStatus::Skipped,
-            reason: Some("env-check does not use baseline comparison".into()),
+            reason: Some("not_applicable".into()),
         },
         inputs: CapabilityEntry {
             status: if parsed.sources_used.is_empty() {
@@ -303,7 +303,7 @@ fn build_capabilities(
                 CapabilityStatus::Available
             },
             reason: if parsed.sources_used.is_empty() {
-                Some("no source files found".into())
+                Some("no_sources_found".into())
             } else {
                 None
             },
@@ -315,7 +315,7 @@ fn build_capabilities(
                 CapabilityStatus::Available
             },
             reason: if requirements.is_empty() {
-                Some("no requirements to probe".into())
+                Some("no_requirements".into())
             } else {
                 None
             },
@@ -432,10 +432,14 @@ fn detect_ci() -> Option<CiMeta> {
             provider: "github".to_string(),
             job: std::env::var("GITHUB_JOB").ok(),
             run_id: std::env::var("GITHUB_RUN_ID").ok(),
-            workflow: None,
-            repository: None,
-            git_ref: None,
-            sha: None,
+            workflow: std::env::var("GITHUB_WORKFLOW")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            repository: std::env::var("GITHUB_REPOSITORY")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            git_ref: std::env::var("GITHUB_REF").ok().filter(|s| !s.is_empty()),
+            sha: std::env::var("GITHUB_SHA").ok().filter(|s| !s.is_empty()),
         });
     }
     // GitLab CI
@@ -444,10 +448,18 @@ fn detect_ci() -> Option<CiMeta> {
             provider: "gitlab".to_string(),
             job: std::env::var("CI_JOB_NAME").ok(),
             run_id: std::env::var("CI_JOB_ID").ok(),
-            workflow: None,
-            repository: None,
-            git_ref: None,
-            sha: None,
+            workflow: std::env::var("CI_PIPELINE_NAME")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            repository: std::env::var("CI_PROJECT_PATH")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            git_ref: std::env::var("CI_COMMIT_REF_NAME")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            sha: std::env::var("CI_COMMIT_SHA")
+                .ok()
+                .filter(|s| !s.is_empty()),
         });
     }
     // CircleCI
@@ -456,10 +468,16 @@ fn detect_ci() -> Option<CiMeta> {
             provider: "circleci".to_string(),
             job: std::env::var("CIRCLE_JOB").ok(),
             run_id: std::env::var("CIRCLE_BUILD_NUM").ok(),
-            workflow: None,
-            repository: None,
-            git_ref: None,
-            sha: None,
+            workflow: std::env::var("CIRCLE_WORKFLOW_ID")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            repository: std::env::var("CIRCLE_PROJECT_REPONAME")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            git_ref: std::env::var("CIRCLE_BRANCH")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            sha: std::env::var("CIRCLE_SHA1").ok().filter(|s| !s.is_empty()),
         });
     }
     // Azure Pipelines
@@ -468,10 +486,18 @@ fn detect_ci() -> Option<CiMeta> {
             provider: "azure".to_string(),
             job: std::env::var("SYSTEM_JOBDISPLAYNAME").ok(),
             run_id: std::env::var("BUILD_BUILDID").ok(),
-            workflow: None,
-            repository: None,
-            git_ref: None,
-            sha: None,
+            workflow: std::env::var("BUILD_DEFINITIONNAME")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            repository: std::env::var("BUILD_REPOSITORY_NAME")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            git_ref: std::env::var("BUILD_SOURCEBRANCH")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            sha: std::env::var("BUILD_SOURCEVERSION")
+                .ok()
+                .filter(|s| !s.is_empty()),
         });
     }
     // Generic CI detection
@@ -494,7 +520,6 @@ fn detect_ci() -> Option<CiMeta> {
 struct GitHubPrEvent {
     base_sha: Option<String>,
     head_sha: Option<String>,
-    #[allow(dead_code)]
     pr_number: Option<u64>,
     base_ref: Option<String>,
 }
@@ -644,7 +669,7 @@ fn detect_git(root: &Path) -> Option<GitMeta> {
         base_sha: gh_event.base_sha,
         head_sha,
         merge_base,
-        pr_number: None,
+        pr_number: gh_event.pr_number,
     })
 }
 

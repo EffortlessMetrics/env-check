@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 
 fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
@@ -39,12 +39,6 @@ fn schema_check() -> anyhow::Result<()> {
     let sensor_schema = jsonschema::validator_for(&sensor_json)
         .map_err(|e| anyhow::anyhow!("compile sensor schema: {}", e))?;
     eprintln!("ok: compiled schemas/sensor.report.v1.schema.json");
-
-    // Also load legacy envelope for reference
-    let envelope_json = load_schema_json("schemas/receipt.envelope.v1.json")?;
-    let _envelope_schema = jsonschema::validator_for(&envelope_json)
-        .map_err(|e| anyhow::anyhow!("compile envelope schema: {}", e))?;
-    eprintln!("ok: compiled schemas/receipt.envelope.v1.json (legacy)");
 
     // Note: The report schema uses $ref to sensor schema which requires resolver setup.
     // For now, we validate the report schema compiles but use sensor schema for validation.
@@ -116,18 +110,20 @@ fn validate_fixture(path: &Path, envelope: &jsonschema::Validator) -> anyhow::Re
     // Additional validation for env-check reports:
     // Verify schema field matches expected value
     if let Some(schema_field) = json.get("schema").and_then(|v| v.as_str())
-        && schema_field == "sensor.report.v1" {
-            // Verify tool.name is "env-check"
-            if let Some(tool) = json.get("tool")
-                && let Some(name) = tool.get("name").and_then(|v| v.as_str())
-                    && name != "env-check" {
-                        bail!(
-                            "{} has schema 'sensor.report.v1' but tool.name is '{}' (expected 'env-check')",
-                            path.display(),
-                            name
-                        );
-                    }
+        && schema_field == "sensor.report.v1"
+    {
+        // Verify tool.name is "env-check"
+        if let Some(tool) = json.get("tool")
+            && let Some(name) = tool.get("name").and_then(|v| v.as_str())
+            && name != "env-check"
+        {
+            bail!(
+                "{} has schema 'sensor.report.v1' but tool.name is '{}' (expected 'env-check')",
+                path.display(),
+                name
+            );
         }
+    }
 
     eprintln!("ok: validated {}", path.display());
     Ok(())
@@ -303,15 +299,13 @@ fn conform() -> anyhow::Result<()> {
     let pass_basic = conform_fixtures.join("pass_basic");
     if pass_basic.exists() {
         match run_env_check_on_fixture(&pass_basic, &temp_dir, "pass_basic") {
-            Ok(report_path) => {
-                match validate_report_against_schema(&report_path, &sensor_schema) {
-                    Ok(()) => {
-                        static_passed += 1;
-                        eprintln!("  PASS: pass_basic produces valid receipt");
-                    }
-                    Err(e) => eprintln!("  FAIL: pass_basic schema validation: {}", e),
+            Ok(report_path) => match validate_report_against_schema(&report_path, &sensor_schema) {
+                Ok(()) => {
+                    static_passed += 1;
+                    eprintln!("  PASS: pass_basic produces valid receipt");
                 }
-            }
+                Err(e) => eprintln!("  FAIL: pass_basic schema validation: {}", e),
+            },
             Err(e) => eprintln!("  FAIL: pass_basic run error: {}", e),
         }
     } else {
@@ -330,7 +324,9 @@ fn conform() -> anyhow::Result<()> {
                         match verify_contains_finding(&report_path, "env.missing_tool") {
                             Ok(()) => {
                                 static_passed += 1;
-                                eprintln!("  PASS: fail_missing produces valid receipt with env.missing_tool");
+                                eprintln!(
+                                    "  PASS: fail_missing produces valid receipt with env.missing_tool"
+                                );
                             }
                             Err(e) => eprintln!("  FAIL: fail_missing finding check: {}", e),
                         }
@@ -466,12 +462,16 @@ fn conform() -> anyhow::Result<()> {
                             match verify_contains_finding(&report_path, "tool.runtime_error") {
                                 Ok(()) => {
                                     survivability_passed += 1;
-                                    eprintln!("  PASS: error_recovery produces valid receipt with tool.runtime_error");
+                                    eprintln!(
+                                        "  PASS: error_recovery produces valid receipt with tool.runtime_error"
+                                    );
                                 }
                                 Err(_) => {
                                     // Might just be a parse error, which is also OK
                                     survivability_passed += 1;
-                                    eprintln!("  PASS: error_recovery produces valid receipt (graceful degradation)");
+                                    eprintln!(
+                                        "  PASS: error_recovery produces valid receipt (graceful degradation)"
+                                    );
                                 }
                             }
                         }
@@ -623,9 +623,10 @@ fn verify_contains_finding(path: &Path, expected_code: &str) -> anyhow::Result<(
     if let Some(findings) = json.get("findings").and_then(|f| f.as_array()) {
         for finding in findings {
             if let Some(code) = finding.get("code").and_then(|c| c.as_str())
-                && code == expected_code {
-                    return Ok(());
-                }
+                && code == expected_code
+            {
+                return Ok(());
+            }
         }
     }
 
@@ -721,11 +722,12 @@ fn normalize_for_comparison(path: &Path) -> anyhow::Result<serde_json::Value> {
 
     // Remove time-sensitive fields
     if let Some(run) = json.get_mut("run")
-        && let Some(obj) = run.as_object_mut() {
-            obj.remove("started_at");
-            obj.remove("ended_at");
-            obj.remove("duration_ms");
-        }
+        && let Some(obj) = run.as_object_mut()
+    {
+        obj.remove("started_at");
+        obj.remove("ended_at");
+        obj.remove("duration_ms");
+    }
 
     Ok(json)
 }

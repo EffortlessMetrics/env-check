@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use cucumber::{given, then, when, World};
+use cucumber::{World, given, then, when};
 use serde_json::Value;
 
 #[derive(World, Debug, Default)]
@@ -138,15 +138,17 @@ fn run_env_check(
     // Try to load the report JSON if it was created
     if out_path.exists()
         && let Ok(bytes) = fs::read(&out_path)
-            && let Ok(json) = serde_json::from_slice(&bytes) {
-                world.report_json = Some(json);
-            }
+        && let Ok(json) = serde_json::from_slice(&bytes)
+    {
+        world.report_json = Some(json);
+    }
 
     // Try to load the markdown if it was created
     if md_path.exists()
-        && let Ok(content) = fs::read_to_string(&md_path) {
-            world.markdown = Some(content);
-        }
+        && let Ok(content) = fs::read_to_string(&md_path)
+    {
+        world.markdown = Some(content);
+    }
 }
 
 #[then(expr = "the exit code is {int}")]
@@ -267,18 +269,14 @@ async fn then_report_valid_against_schema(world: &mut EnvWorld) {
     let schema_json: Value =
         serde_json::from_slice(&schema_bytes).expect("failed to parse schema JSON");
 
-    let compiled =
-        jsonschema::validator_for(&schema_json).expect("failed to compile JSON schema");
+    let compiled = jsonschema::validator_for(&schema_json).expect("failed to compile JSON schema");
 
     let errors: Vec<String> = compiled
         .iter_errors(report)
         .map(|e| format!("  - {}: {}", e.instance_path(), e))
         .collect();
     if !errors.is_empty() {
-        panic!(
-            "report JSON does not match schema:\n{}",
-            errors.join("\n")
-        );
+        panic!("report JSON does not match schema:\n{}", errors.join("\n"));
     }
 }
 

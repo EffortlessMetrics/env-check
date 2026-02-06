@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use env_check_types::{
-    checks, codes, Finding, Location, ProbeKind, Requirement, Severity, SourceKind, SourceRef,
+    Finding, Location, ProbeKind, Requirement, Severity, SourceKind, SourceRef, checks, codes,
 };
 
 pub use go_mod::{parse_go_mod, parse_go_mod_str};

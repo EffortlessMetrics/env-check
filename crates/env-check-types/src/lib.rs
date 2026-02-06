@@ -384,10 +384,22 @@ mod tests {
     #[test]
     fn capabilities_serialization_round_trip() {
         let caps = Capabilities {
-            git: CapabilityEntry { status: CapabilityStatus::Available, reason: None },
-            baseline: CapabilityEntry { status: CapabilityStatus::Skipped, reason: Some("env-check does not use baseline comparison".into()) },
-            inputs: CapabilityEntry { status: CapabilityStatus::Available, reason: None },
-            engine: CapabilityEntry { status: CapabilityStatus::Available, reason: None },
+            git: CapabilityEntry {
+                status: CapabilityStatus::Available,
+                reason: None,
+            },
+            baseline: CapabilityEntry {
+                status: CapabilityStatus::Skipped,
+                reason: Some("env-check does not use baseline comparison".into()),
+            },
+            inputs: CapabilityEntry {
+                status: CapabilityStatus::Available,
+                reason: None,
+            },
+            engine: CapabilityEntry {
+                status: CapabilityStatus::Available,
+                reason: None,
+            },
         };
 
         let json = serde_json::to_string(&caps).unwrap();
@@ -408,10 +420,22 @@ mod tests {
             ci: None,
             git: None,
             capabilities: Some(Capabilities {
-                git: CapabilityEntry { status: CapabilityStatus::Available, reason: None },
-                baseline: CapabilityEntry { status: CapabilityStatus::Skipped, reason: Some("not supported".into()) },
-                inputs: CapabilityEntry { status: CapabilityStatus::Available, reason: None },
-                engine: CapabilityEntry { status: CapabilityStatus::Available, reason: None },
+                git: CapabilityEntry {
+                    status: CapabilityStatus::Available,
+                    reason: None,
+                },
+                baseline: CapabilityEntry {
+                    status: CapabilityStatus::Skipped,
+                    reason: Some("not supported".into()),
+                },
+                inputs: CapabilityEntry {
+                    status: CapabilityStatus::Available,
+                    reason: None,
+                },
+                engine: CapabilityEntry {
+                    status: CapabilityStatus::Available,
+                    reason: None,
+                },
             }),
         };
 
@@ -420,7 +444,10 @@ mod tests {
 
         assert_eq!(run, parsed);
         assert!(parsed.capabilities.is_some());
-        assert_eq!(parsed.capabilities.as_ref().unwrap().git.status, CapabilityStatus::Available);
+        assert_eq!(
+            parsed.capabilities.as_ref().unwrap().git.status,
+            CapabilityStatus::Available
+        );
     }
 
     #[test]

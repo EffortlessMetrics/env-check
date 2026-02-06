@@ -3,8 +3,8 @@
 use std::collections::BTreeSet;
 
 use env_check_types::{
-    checks, codes, Counts, FailOn, Finding, Location, Observation, PolicyConfig, ProbeKind,
-    Requirement, Severity, Verdict, VerdictStatus,
+    Counts, FailOn, Finding, Location, Observation, PolicyConfig, ProbeKind, Requirement, Severity,
+    Verdict, VerdictStatus, checks, codes,
 };
 use semver::{Version, VersionReq};
 
@@ -862,10 +862,11 @@ mod tests {
         let reqs = vec![req("node", Some(">=20"))];
         let obs = vec![obs("node", true, Some("18.0.0"))];
         let out = evaluate(&reqs, &obs, &policy, &[".tool-versions".into()]);
-        assert!(out
-            .verdict
-            .reasons
-            .contains(&"version_mismatch".to_string()));
+        assert!(
+            out.verdict
+                .reasons
+                .contains(&"version_mismatch".to_string())
+        );
     }
 
     #[test]

@@ -98,35 +98,37 @@ pub fn parse_package_json_str(
 
     // Extract engines.node
     if let Some(engines) = value.get("engines")
-        && let Some(node_constraint) = engines.get("node").and_then(|v| v.as_str()) {
-            reqs.push(Requirement {
-                tool: "node".to_string(),
-                constraint: Some(node_constraint.to_string()),
-                required: true,
-                source: SourceRef {
-                    kind: SourceKind::PackageJson,
-                    path: rel(root, path),
-                },
-                probe_kind: ProbeKind::PathTool,
-                hash: None,
-            });
-        }
+        && let Some(node_constraint) = engines.get("node").and_then(|v| v.as_str())
+    {
+        reqs.push(Requirement {
+            tool: "node".to_string(),
+            constraint: Some(node_constraint.to_string()),
+            required: true,
+            source: SourceRef {
+                kind: SourceKind::PackageJson,
+                path: rel(root, path),
+            },
+            probe_kind: ProbeKind::PathTool,
+            hash: None,
+        });
+    }
 
     // Extract packageManager (e.g., "pnpm@8.15.0")
     if let Some(pm) = value.get("packageManager").and_then(|v| v.as_str())
-        && let Some((tool, version)) = parse_package_manager(pm) {
-            reqs.push(Requirement {
-                tool,
-                constraint: Some(version),
-                required: true,
-                source: SourceRef {
-                    kind: SourceKind::PackageJson,
-                    path: rel(root, path),
-                },
-                probe_kind: ProbeKind::PathTool,
-                hash: None,
-            });
-        }
+        && let Some((tool, version)) = parse_package_manager(pm)
+    {
+        reqs.push(Requirement {
+            tool,
+            constraint: Some(version),
+            required: true,
+            source: SourceRef {
+                kind: SourceKind::PackageJson,
+                path: rel(root, path),
+            },
+            probe_kind: ProbeKind::PathTool,
+            hash: None,
+        });
+    }
 
     Ok(reqs)
 }

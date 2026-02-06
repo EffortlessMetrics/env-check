@@ -414,10 +414,12 @@ fn parse_all_discovers_sources() {
     let root = Path::new("tests/fixtures/tool_versions_basic");
     let parsed = parse_all(root, &[]);
     assert!(!parsed.sources_used.is_empty());
-    assert!(parsed
-        .sources_used
-        .iter()
-        .any(|s| s.kind == SourceKind::ToolVersions));
+    assert!(
+        parsed
+            .sources_used
+            .iter()
+            .any(|s| s.kind == SourceKind::ToolVersions)
+    );
 }
 
 #[test]
@@ -470,14 +472,18 @@ fn parse_all_includes_hash_manifests() {
     let root = Path::new("tests/fixtures/hash_manifest");
     let hash_manifests = vec![std::path::PathBuf::from("scripts/tools.sha256")];
     let parsed = parse_all(root, &hash_manifests);
-    assert!(parsed
-        .sources_used
-        .iter()
-        .any(|s| s.kind == SourceKind::HashManifest));
-    assert!(parsed
-        .requirements
-        .iter()
-        .any(|r| r.tool.starts_with("file:")));
+    assert!(
+        parsed
+            .sources_used
+            .iter()
+            .any(|s| s.kind == SourceKind::HashManifest)
+    );
+    assert!(
+        parsed
+            .requirements
+            .iter()
+            .any(|r| r.tool.starts_with("file:"))
+    );
 }
 
 #[test]
@@ -494,20 +500,24 @@ fn parse_all_skips_nonexistent_hash_manifest() {
 fn parse_all_discovers_mise_toml() {
     let root = Path::new("tests/fixtures/mise_basic");
     let parsed = parse_all(root, &[]);
-    assert!(parsed
-        .sources_used
-        .iter()
-        .any(|s| s.kind == SourceKind::MiseToml));
+    assert!(
+        parsed
+            .sources_used
+            .iter()
+            .any(|s| s.kind == SourceKind::MiseToml)
+    );
 }
 
 #[test]
 fn parse_all_discovers_rust_toolchain() {
     let root = Path::new("tests/fixtures/rust_toolchain");
     let parsed = parse_all(root, &[]);
-    assert!(parsed
-        .sources_used
-        .iter()
-        .any(|s| s.kind == SourceKind::RustToolchain));
+    assert!(
+        parsed
+            .sources_used
+            .iter()
+            .any(|s| s.kind == SourceKind::RustToolchain)
+    );
 }
 
 // =============================================================================
@@ -678,20 +688,24 @@ fn pyproject_toml_empty_file() {
 fn parse_all_discovers_python_version() {
     let root = Path::new("tests/fixtures/python_version_basic");
     let parsed = parse_all(root, &[]);
-    assert!(parsed
-        .sources_used
-        .iter()
-        .any(|s| s.kind == SourceKind::PythonVersion));
+    assert!(
+        parsed
+            .sources_used
+            .iter()
+            .any(|s| s.kind == SourceKind::PythonVersion)
+    );
 }
 
 #[test]
 fn parse_all_discovers_pyproject_toml() {
     let root = Path::new("tests/fixtures/pyproject_basic");
     let parsed = parse_all(root, &[]);
-    assert!(parsed
-        .sources_used
-        .iter()
-        .any(|s| s.kind == SourceKind::PyprojectToml));
+    assert!(
+        parsed
+            .sources_used
+            .iter()
+            .any(|s| s.kind == SourceKind::PyprojectToml)
+    );
 }
 
 #[test]
@@ -820,10 +834,12 @@ fn go_mod_relative_path_stored() {
 fn parse_all_discovers_go_mod() {
     let root = Path::new("tests/fixtures/go_mod_basic");
     let parsed = parse_all(root, &[]);
-    assert!(parsed
-        .sources_used
-        .iter()
-        .any(|s| s.kind == SourceKind::GoMod));
+    assert!(
+        parsed
+            .sources_used
+            .iter()
+            .any(|s| s.kind == SourceKind::GoMod)
+    );
 }
 
 #[test]
@@ -1112,30 +1128,36 @@ fn package_json_engines_semver_range() {
 fn parse_all_discovers_node_version() {
     let root = Path::new("tests/fixtures/node_version_basic");
     let parsed = parse_all(root, &[]);
-    assert!(parsed
-        .sources_used
-        .iter()
-        .any(|s| s.kind == SourceKind::NodeVersion));
+    assert!(
+        parsed
+            .sources_used
+            .iter()
+            .any(|s| s.kind == SourceKind::NodeVersion)
+    );
 }
 
 #[test]
 fn parse_all_discovers_nvmrc() {
     let root = Path::new("tests/fixtures/nvmrc_basic");
     let parsed = parse_all(root, &[]);
-    assert!(parsed
-        .sources_used
-        .iter()
-        .any(|s| s.kind == SourceKind::Nvmrc));
+    assert!(
+        parsed
+            .sources_used
+            .iter()
+            .any(|s| s.kind == SourceKind::Nvmrc)
+    );
 }
 
 #[test]
 fn parse_all_discovers_package_json() {
     let root = Path::new("tests/fixtures/package_json_basic");
     let parsed = parse_all(root, &[]);
-    assert!(parsed
-        .sources_used
-        .iter()
-        .any(|s| s.kind == SourceKind::PackageJson));
+    assert!(
+        parsed
+            .sources_used
+            .iter()
+            .any(|s| s.kind == SourceKind::PackageJson)
+    );
 }
 
 #[test]
