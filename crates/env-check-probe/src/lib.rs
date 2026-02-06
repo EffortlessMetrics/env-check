@@ -79,6 +79,21 @@ impl Hasher for Sha256Hasher {
     }
 }
 
+/// Port trait for obtaining timestamps.
+/// Injectable for deterministic receipt testing.
+pub trait Clock: Send + Sync {
+    fn now(&self) -> chrono::DateTime<chrono::Utc>;
+}
+
+/// System clock adapter using chrono::Utc.
+pub struct SystemClock;
+
+impl Clock for SystemClock {
+    fn now(&self) -> chrono::DateTime<chrono::Utc> {
+        chrono::Utc::now()
+    }
+}
+
 #[derive(Clone)]
 pub struct Prober<R: CommandRunner, P: PathResolver, H: Hasher> {
     runner: R,
@@ -482,6 +497,38 @@ pub mod fakes {
                 .get(path)
                 .cloned()
                 .ok_or_else(|| EnvCheckError::Io(format!("file not found: {}", path.display())))
+        }
+    }
+
+    /// A fake Clock that returns a fixed timestamp for deterministic testing.
+    pub struct FakeClock {
+        fixed_time: chrono::DateTime<chrono::Utc>,
+    }
+
+    impl FakeClock {
+        /// Create a FakeClock with a specific fixed timestamp.
+        pub fn new(time: chrono::DateTime<chrono::Utc>) -> Self {
+            Self { fixed_time: time }
+        }
+
+        /// Create a FakeClock with a default fixed timestamp (2024-01-01T00:00:00Z).
+        pub fn default_time() -> Self {
+            use chrono::TimeZone;
+            Self {
+                fixed_time: chrono::Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
+            }
+        }
+    }
+
+    impl Default for FakeClock {
+        fn default() -> Self {
+            Self::default_time()
+        }
+    }
+
+    impl super::Clock for FakeClock {
+        fn now(&self) -> chrono::DateTime<chrono::Utc> {
+            self.fixed_time
         }
     }
 }
@@ -898,5 +945,54 @@ mod tests {
         assert_eq!(result.exit, Some(42));
         assert_eq!(result.stdout, "stdout content");
         assert_eq!(result.stderr, "stderr content");
+    }
+
+    // =========================================================================
+    // Clock Tests
+    // =========================================================================
+
+    #[test]
+    fn system_clock_returns_current_time() {
+        use chrono::Utc;
+
+        let clock = SystemClock;
+        let before = Utc::now();
+        let clock_time = clock.now();
+        let after = Utc::now();
+
+        // Clock time should be between before and after
+        assert!(clock_time >= before);
+        assert!(clock_time <= after);
+    }
+
+    #[test]
+    fn fake_clock_returns_fixed_time() {
+        use chrono::TimeZone;
+
+        let fixed = chrono::Utc
+            .with_ymd_and_hms(2024, 6, 15, 12, 30, 45)
+            .unwrap();
+        let clock = FakeClock::new(fixed);
+
+        assert_eq!(clock.now(), fixed);
+        assert_eq!(clock.now(), fixed); // Same value on repeated calls
+    }
+
+    #[test]
+    fn fake_clock_default_time() {
+        use chrono::TimeZone;
+
+        let clock = FakeClock::default_time();
+        let expected = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+
+        assert_eq!(clock.now(), expected);
+    }
+
+    #[test]
+    fn fake_clock_default_trait() {
+        let clock = FakeClock::default();
+        let clock2 = FakeClock::default_time();
+
+        assert_eq!(clock.now(), clock2.now());
     }
 }

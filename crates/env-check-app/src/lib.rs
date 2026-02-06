@@ -6,10 +6,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
-use chrono::Utc;
 use env_check_domain::DomainOutcome;
 use env_check_probe::{
-    FileLogWriter, LoggingCommandRunner, OsCommandRunner, OsPathResolver, Prober, Sha256Hasher,
+    Clock, FileLogWriter, LoggingCommandRunner, OsCommandRunner, OsPathResolver, Prober,
+    Sha256Hasher, SystemClock,
 };
 use env_check_sources::ParsedSources;
 use env_check_types::{
@@ -66,7 +66,19 @@ pub fn run_check_with_options(
     fail_on: FailOn,
     options: CheckOptions,
 ) -> anyhow::Result<CheckOutput> {
-    let started = Utc::now();
+    run_check_with_clock(root, config_path, profile, fail_on, options, &SystemClock)
+}
+
+/// Run env-check end-to-end with a custom clock (for deterministic testing).
+pub fn run_check_with_clock(
+    root: &Path,
+    config_path: Option<&Path>,
+    profile: Profile,
+    fail_on: FailOn,
+    options: CheckOptions,
+    clock: &dyn Clock,
+) -> anyhow::Result<CheckOutput> {
+    let started = clock.now();
 
     let mut cfg = load_config(root, config_path)?;
     if cfg.hash_manifests.is_empty() {
@@ -101,7 +113,7 @@ pub fn run_check_with_options(
         &parsed.findings,
     );
 
-    let ended = Utc::now();
+    let ended = clock.now();
     let duration_ms = ended
         .signed_duration_since(started)
         .num_milliseconds()
@@ -301,7 +313,15 @@ fn probe_kind_to_string(kind: &env_check_types::ProbeKind) -> String {
 ///
 /// This is used when env-check fails before producing a normal receipt.
 pub fn runtime_error_receipt(message: &str) -> ReceiptEnvelope {
-    let started = Utc::now();
+    runtime_error_receipt_with_clock(message, &SystemClock)
+}
+
+/// Build a minimal receipt for tool/runtime errors with a custom clock.
+///
+/// This is used when env-check fails before producing a normal receipt.
+/// The clock parameter enables deterministic testing.
+pub fn runtime_error_receipt_with_clock(message: &str, clock: &dyn Clock) -> ReceiptEnvelope {
+    let started = clock.now();
     ReceiptEnvelope {
         schema: SCHEMA_ID.to_string(),
         tool: ToolMeta {
@@ -828,5 +848,37 @@ mod tests {
         );
 
         let _ = fs::remove_dir_all(&temp_root);
+    }
+
+    // =========================================================================
+    // Clock Integration Tests
+    // =========================================================================
+
+    #[test]
+    fn runtime_error_receipt_with_clock_uses_fixed_time() {
+        use chrono::TimeZone;
+        use env_check_probe::fakes::FakeClock;
+
+        let fixed_time = chrono::Utc
+            .with_ymd_and_hms(2024, 6, 15, 10, 30, 0)
+            .unwrap();
+        let clock = FakeClock::new(fixed_time);
+
+        let receipt = runtime_error_receipt_with_clock("test error", &clock);
+
+        assert_eq!(receipt.run.started_at, fixed_time);
+    }
+
+    #[test]
+    fn runtime_error_receipt_deterministic_with_same_clock() {
+        use env_check_probe::fakes::FakeClock;
+
+        let clock = FakeClock::default();
+
+        let receipt1 = runtime_error_receipt_with_clock("error 1", &clock);
+        let receipt2 = runtime_error_receipt_with_clock("error 2", &clock);
+
+        // Same clock produces same timestamps
+        assert_eq!(receipt1.run.started_at, receipt2.run.started_at);
     }
 }
