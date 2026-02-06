@@ -185,7 +185,7 @@ This plan is sequenced to land small, reversible increments while keeping contra
 ### Work (checklist)
 
 - Contract conformance:
-  - receipt schema validation stays green (`receipt.envelope.v1`)
+  - receipt schema validation stays green (`sensor.report.v1`)
   - findings ordering is severity desc → path → check_id → code → message
   - skip receipts include `verdict.reasons = ["no_sources", ...]`
 - Offline-first behavior:

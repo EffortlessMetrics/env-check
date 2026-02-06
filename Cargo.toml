@@ -12,12 +12,12 @@ members = [
 ]
 
 [workspace.package]
-edition = "2021"
-license = "MIT"
+edition = "2024"
+license = "MIT or apache 2.0"
 repository = "https://github.com/EffortlessMetrics/env-check"
 homepage = "https://github.com/EffortlessMetrics/env-check"
 rust-version = "1.92"
-authors = ["Effortless Metrics <dev@effortlessmetrics.com>"]
+authors = ["Effortless Metrics <git@effortlesssteven.com>"]
 keywords = ["ci", "devops", "toolchain", "version-check", "validation"]
 categories = ["development-tools", "command-line-utilities"]
 
@@ -31,39 +31,39 @@ env-check-render = { version = "0.1.0", path = "crates/env-check-render" }
 env-check-app = { version = "0.1.0", path = "crates/env-check-app" }
 
 # Core
-anyhow = "1"
-thiserror = "1"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+anyhow = "1.0.101"
+thiserror = "2.0.18"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
 
 # CLI / UX
-clap = { version = "4", features = ["derive", "env"] }
+clap = { version = "4.5.57", features = ["derive", "env"] }
 
 # Parsing / data
-toml = "0.8"
-toml_edit = "0.22"
-regex = "1"
-globset = "0.4"
+toml = "0.9.8"
+toml_edit = "0.23.9"
+regex = "1.12.3"
+globset = "0.4.18"
 
 # Runtime helpers
-chrono = { version = "0.4", features = ["serde"] }
-which = "6"
-sha2 = "0.10"
-hex = "0.4"
+chrono = { version = "0.4.43", features = ["serde"] }
+which = "8.0.0"
+sha2 = "0.10.9"
+hex = "0.4.3"
 
 # Testing
-insta = "1"
-proptest = "1"
-assert_cmd = "2"
-predicates = "3"
-tempfile = "3"
+insta = "1.46.3"
+proptest = "1.10.0"
+assert_cmd = "2.1.2"
+predicates = "3.1.3"
+tempfile = "3.24.0"
 
 # BDD (gherkin)
-cucumber = "0.21"
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+cucumber = "0.22.1"
+tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros"] }
 
-semver = "1"
-jsonschema = "0.17"
+semver = "1.0.27"
+jsonschema = "0.41.0"
 
 [workspace.metadata.dist]
 cargo-dist-version = "0.30.3"

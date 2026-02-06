@@ -80,6 +80,18 @@
             },
             "run_id": {
               "type": "string"
+            },
+            "workflow": {
+              "type": "string"
+            },
+            "repository": {
+              "type": "string"
+            },
+            "git_ref": {
+              "type": "string"
+            },
+            "sha": {
+              "type": "string"
             }
           }
         },
@@ -104,32 +116,23 @@
             },
             "merge_base": {
               "type": "string"
+            },
+            "pr_number": {
+              "type": "integer",
+              "minimum": 1
             }
           }
         },
         "capabilities": {
           "type": "object",
-          "additionalProperties": true,
-          "description": "Declares what the sensor actually checked (No Green By Omission)",
-          "properties": {
-            "git": {
-              "type": "boolean",
-              "description": "Whether git metadata was detected"
+          "additionalProperties": {
+            "type": "object",
+            "required": ["status"],
+            "properties": {
+              "status": { "enum": ["available", "unavailable", "skipped"] },
+              "reason": { "type": "string" }
             },
-            "sources": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "Source file types that were parsed"
-            },
-            "probes": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "Probe types that were used"
-            }
+            "additionalProperties": false
           }
         }
       }

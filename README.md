@@ -26,10 +26,16 @@ opt-in tool.
 
 env-check will attempt to read any of these if present:
 
-- `rust-toolchain.toml` / `rust-toolchain`
-- `.mise.toml`
 - `.tool-versions` (asdf)
-- `scripts/tools.sha256` (or other configured hash manifest)
+- `.mise.toml` (mise)
+- `rust-toolchain.toml` / `rust-toolchain`
+- `.node-version`
+- `.nvmrc`
+- `package.json` (engines field)
+- `.python-version`
+- `pyproject.toml`
+- `go.mod`
+- Hash manifest (`scripts/tools.sha256` or configured)
 
 If none exist, env-check emits a **skip** receipt (it does not fail a random repo).
 

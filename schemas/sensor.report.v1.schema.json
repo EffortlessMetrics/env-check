@@ -80,6 +80,18 @@
             },
             "run_id": {
               "type": "string"
+            },
+            "workflow": {
+              "type": "string"
+            },
+            "repository": {
+              "type": "string"
+            },
+            "git_ref": {
+              "type": "string"
+            },
+            "sha": {
+              "type": "string"
             }
           }
         },
@@ -104,6 +116,10 @@
             },
             "merge_base": {
               "type": "string"
+            },
+            "pr_number": {
+              "type": "integer",
+              "minimum": 1
             }
           }
         },

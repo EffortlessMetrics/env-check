@@ -4,7 +4,7 @@ env-check speaks in receipts. This is a deliberately small API.
 
 ## Envelope
 
-All receipts conform to `receipt.envelope.v1`:
+All receipts conform to `sensor.report.v1`:
 
 - `schema` — identifies the concrete report schema (e.g., `sensor.report.v1`)
 - `tool` — `{ name, version, commit? }`
