@@ -136,20 +136,17 @@ fn run_env_check(
     world.stdout = Some(String::from_utf8_lossy(&out.stdout).to_string());
 
     // Try to load the report JSON if it was created
-    if out_path.exists() {
-        if let Ok(bytes) = fs::read(&out_path) {
-            if let Ok(json) = serde_json::from_slice(&bytes) {
+    if out_path.exists()
+        && let Ok(bytes) = fs::read(&out_path)
+            && let Ok(json) = serde_json::from_slice(&bytes) {
                 world.report_json = Some(json);
             }
-        }
-    }
 
     // Try to load the markdown if it was created
-    if md_path.exists() {
-        if let Ok(content) = fs::read_to_string(&md_path) {
+    if md_path.exists()
+        && let Ok(content) = fs::read_to_string(&md_path) {
             world.markdown = Some(content);
         }
-    }
 }
 
 #[then(expr = "the exit code is {int}")]
@@ -271,16 +268,16 @@ async fn then_report_valid_against_schema(world: &mut EnvWorld) {
         serde_json::from_slice(&schema_bytes).expect("failed to parse schema JSON");
 
     let compiled =
-        jsonschema::JSONSchema::compile(&schema_json).expect("failed to compile JSON schema");
+        jsonschema::validator_for(&schema_json).expect("failed to compile JSON schema");
 
-    let result = compiled.validate(report);
-    if let Err(errors) = result {
-        let error_messages: Vec<String> = errors
-            .map(|e| format!("  - {}: {}", e.instance_path, e))
-            .collect();
+    let errors: Vec<String> = compiled
+        .iter_errors(report)
+        .map(|e| format!("  - {}: {}", e.instance_path(), e))
+        .collect();
+    if !errors.is_empty() {
         panic!(
             "report JSON does not match schema:\n{}",
-            error_messages.join("\n")
+            errors.join("\n")
         );
     }
 }

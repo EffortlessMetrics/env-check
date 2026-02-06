@@ -36,13 +36,13 @@ fn print_help() {
 fn schema_check() -> anyhow::Result<()> {
     // 1. Load and compile schemas (keeping JSON values in scope)
     let sensor_json = load_schema_json("schemas/sensor.report.v1.schema.json")?;
-    let sensor_schema = jsonschema::JSONSchema::compile(&sensor_json)
+    let sensor_schema = jsonschema::validator_for(&sensor_json)
         .map_err(|e| anyhow::anyhow!("compile sensor schema: {}", e))?;
     eprintln!("ok: compiled schemas/sensor.report.v1.schema.json");
 
     // Also load legacy envelope for reference
     let envelope_json = load_schema_json("schemas/receipt.envelope.v1.json")?;
-    let _envelope_schema = jsonschema::JSONSchema::compile(&envelope_json)
+    let _envelope_schema = jsonschema::validator_for(&envelope_json)
         .map_err(|e| anyhow::anyhow!("compile envelope schema: {}", e))?;
     eprintln!("ok: compiled schemas/receipt.envelope.v1.json (legacy)");
 
@@ -83,7 +83,7 @@ fn load_schema_json(path: &str) -> anyhow::Result<serde_json::Value> {
 
 fn validate_all_fixtures(
     fixtures_dir: &Path,
-    envelope: &jsonschema::JSONSchema,
+    envelope: &jsonschema::Validator,
 ) -> anyhow::Result<()> {
     for entry in fs::read_dir(fixtures_dir).context("read fixtures dir")? {
         let entry = entry?;
@@ -95,42 +95,39 @@ fn validate_all_fixtures(
     Ok(())
 }
 
-fn validate_fixture(path: &Path, envelope: &jsonschema::JSONSchema) -> anyhow::Result<()> {
+fn validate_fixture(path: &Path, envelope: &jsonschema::Validator) -> anyhow::Result<()> {
     let bytes = fs::read(path).with_context(|| format!("read {}", path.display()))?;
     let json: serde_json::Value =
         serde_json::from_slice(&bytes).with_context(|| format!("parse {}", path.display()))?;
 
     // Validate against envelope schema
-    let result = envelope.validate(&json);
-    if let Err(errors) = result {
-        let error_messages: Vec<String> = errors
-            .map(|e| format!("  - {}: {}", e.instance_path, e))
-            .collect();
+    let errors: Vec<String> = envelope
+        .iter_errors(&json)
+        .map(|e| format!("  - {}: {}", e.instance_path(), e))
+        .collect();
+    if !errors.is_empty() {
         bail!(
             "{} failed envelope validation:\n{}",
             path.display(),
-            error_messages.join("\n")
+            errors.join("\n")
         );
     }
 
     // Additional validation for env-check reports:
     // Verify schema field matches expected value
-    if let Some(schema_field) = json.get("schema").and_then(|v| v.as_str()) {
-        if schema_field == "sensor.report.v1" {
+    if let Some(schema_field) = json.get("schema").and_then(|v| v.as_str())
+        && schema_field == "sensor.report.v1" {
             // Verify tool.name is "env-check"
-            if let Some(tool) = json.get("tool") {
-                if let Some(name) = tool.get("name").and_then(|v| v.as_str()) {
-                    if name != "env-check" {
+            if let Some(tool) = json.get("tool")
+                && let Some(name) = tool.get("name").and_then(|v| v.as_str())
+                    && name != "env-check" {
                         bail!(
                             "{} has schema 'sensor.report.v1' but tool.name is '{}' (expected 'env-check')",
                             path.display(),
                             name
                         );
                     }
-                }
-            }
         }
-    }
 
     eprintln!("ok: validated {}", path.display());
     Ok(())
@@ -274,7 +271,7 @@ fn conform() -> anyhow::Result<()> {
 
     // Load schema for validation
     let sensor_json = load_schema_json("schemas/sensor.report.v1.schema.json")?;
-    let sensor_schema = jsonschema::JSONSchema::compile(&sensor_json)
+    let sensor_schema = jsonschema::validator_for(&sensor_json)
         .map_err(|e| anyhow::anyhow!("compile sensor schema: {}", e))?;
 
     // Track results
@@ -601,18 +598,18 @@ fn run_env_check_on_fixture(
 /// Validate a report file against the envelope schema.
 fn validate_report_against_schema(
     path: &Path,
-    schema: &jsonschema::JSONSchema,
+    schema: &jsonschema::Validator,
 ) -> anyhow::Result<()> {
     let bytes = fs::read(path).with_context(|| format!("read {}", path.display()))?;
     let json: serde_json::Value =
         serde_json::from_slice(&bytes).with_context(|| format!("parse {}", path.display()))?;
 
-    let result = schema.validate(&json);
-    if let Err(errors) = result {
-        let error_messages: Vec<String> = errors
-            .map(|e| format!("  - {}: {}", e.instance_path, e))
-            .collect();
-        bail!("schema validation failed:\n{}", error_messages.join("\n"));
+    let errors: Vec<String> = schema
+        .iter_errors(&json)
+        .map(|e| format!("  - {}: {}", e.instance_path(), e))
+        .collect();
+    if !errors.is_empty() {
+        bail!("schema validation failed:\n{}", errors.join("\n"));
     }
 
     Ok(())
@@ -625,11 +622,10 @@ fn verify_contains_finding(path: &Path, expected_code: &str) -> anyhow::Result<(
 
     if let Some(findings) = json.get("findings").and_then(|f| f.as_array()) {
         for finding in findings {
-            if let Some(code) = finding.get("code").and_then(|c| c.as_str()) {
-                if code == expected_code {
+            if let Some(code) = finding.get("code").and_then(|c| c.as_str())
+                && code == expected_code {
                     return Ok(());
                 }
-            }
         }
     }
 
@@ -724,13 +720,12 @@ fn normalize_for_comparison(path: &Path) -> anyhow::Result<serde_json::Value> {
     let mut json: serde_json::Value = serde_json::from_slice(&bytes)?;
 
     // Remove time-sensitive fields
-    if let Some(run) = json.get_mut("run") {
-        if let Some(obj) = run.as_object_mut() {
+    if let Some(run) = json.get_mut("run")
+        && let Some(obj) = run.as_object_mut() {
             obj.remove("started_at");
             obj.remove("ended_at");
             obj.remove("duration_ms");
         }
-    }
 
     Ok(json)
 }

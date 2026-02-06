@@ -1,5 +1,5 @@
 use assert_cmd::Command;
-use jsonschema::JSONSchema;
+use jsonschema::Validator;
 use predicates::prelude::*;
 use serde_json::Value;
 use std::fs;
@@ -13,7 +13,7 @@ fn fixtures_dir() -> PathBuf {
         .join("fixtures")
 }
 
-fn envelope_schema() -> JSONSchema {
+fn envelope_schema() -> Validator {
     let schema_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
@@ -23,7 +23,7 @@ fn envelope_schema() -> JSONSchema {
         .unwrap_or_else(|e| panic!("read schema {}: {}", schema_path.display(), e));
     let schema_json: Value = serde_json::from_str(&schema_bytes)
         .unwrap_or_else(|e| panic!("parse schema {}: {}", schema_path.display(), e));
-    JSONSchema::compile(&schema_json)
+    jsonschema::validator_for(&schema_json)
         .unwrap_or_else(|e| panic!("compile schema {}: {}", schema_path.display(), e))
 }
 
@@ -339,14 +339,14 @@ fn runtime_error_writes_receipt_and_exits_one() {
     assert_eq!(finding["code"].as_str().unwrap(), "tool.runtime_error");
 
     let schema = envelope_schema();
-    let validation = schema.validate(&json);
-    if let Err(errors) = validation {
-        let messages: Vec<String> = errors
-            .map(|e| format!("{}: {}", e.instance_path, e))
-            .collect();
+    let errors: Vec<String> = schema
+        .iter_errors(&json)
+        .map(|e| format!("{}: {}", e.instance_path(), e))
+        .collect();
+    if !errors.is_empty() {
         panic!(
             "runtime error receipt failed envelope validation:\n{}",
-            messages.join("\n")
+            errors.join("\n")
         );
     }
 }
@@ -572,14 +572,14 @@ fn report_json_matches_envelope_schema() {
     let json: Value = serde_json::from_str(&content).expect("Report should be valid JSON");
 
     let schema = envelope_schema();
-    let validation = schema.validate(&json);
-    if let Err(errors) = validation {
-        let messages: Vec<String> = errors
-            .map(|e| format!("{}: {}", e.instance_path, e))
-            .collect();
+    let errors: Vec<String> = schema
+        .iter_errors(&json)
+        .map(|e| format!("{}: {}", e.instance_path(), e))
+        .collect();
+    if !errors.is_empty() {
         panic!(
             "report.json failed envelope validation:\n{}",
-            messages.join("\n")
+            errors.join("\n")
         );
     }
 }
