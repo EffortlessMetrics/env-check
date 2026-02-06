@@ -34,15 +34,21 @@ fn print_help() {
 }
 
 fn schema_check() -> anyhow::Result<()> {
-    // 1. Load and compile both schemas (keeping JSON values in scope)
-    let envelope_json = load_schema_json("schemas/receipt.envelope.v1.json")?;
-    let envelope_schema = jsonschema::JSONSchema::compile(&envelope_json)
-        .map_err(|e| anyhow::anyhow!("compile envelope schema: {}", e))?;
-    eprintln!("ok: compiled schemas/receipt.envelope.v1.json");
+    // 1. Load and compile schemas (keeping JSON values in scope)
+    let sensor_json = load_schema_json("schemas/sensor.report.v1.schema.json")?;
+    let sensor_schema = jsonschema::JSONSchema::compile(&sensor_json)
+        .map_err(|e| anyhow::anyhow!("compile sensor schema: {}", e))?;
+    eprintln!("ok: compiled schemas/sensor.report.v1.schema.json");
 
-    // Note: The report schema uses $ref to envelope schema which requires resolver setup.
-    // For now, we validate the report schema compiles but use envelope for validation.
-    // The report schema adds const constraints (schema="env-check.report.v1", tool.name="env-check")
+    // Also load legacy envelope for reference
+    let envelope_json = load_schema_json("schemas/receipt.envelope.v1.json")?;
+    let _envelope_schema = jsonschema::JSONSchema::compile(&envelope_json)
+        .map_err(|e| anyhow::anyhow!("compile envelope schema: {}", e))?;
+    eprintln!("ok: compiled schemas/receipt.envelope.v1.json (legacy)");
+
+    // Note: The report schema uses $ref to sensor schema which requires resolver setup.
+    // For now, we validate the report schema compiles but use sensor schema for validation.
+    // The report schema adds const constraints (schema="sensor.report.v1", tool.name="env-check")
     // which we verify separately.
     let report_json = load_schema_json("schemas/env-check.report.v1.json")?;
     eprintln!("ok: loaded schemas/env-check.report.v1.json");
@@ -56,12 +62,12 @@ fn schema_check() -> anyhow::Result<()> {
     // 2. Validate example fixtures
     let fixtures_dir = PathBuf::from("xtask/fixtures");
     if fixtures_dir.exists() {
-        validate_all_fixtures(&fixtures_dir, &envelope_schema)?;
+        validate_all_fixtures(&fixtures_dir, &sensor_schema)?;
     } else {
         eprintln!("note: no fixtures directory at xtask/fixtures/, creating examples");
         create_example_fixtures()?;
         // Re-validate after creating
-        validate_all_fixtures(&fixtures_dir, &envelope_schema)?;
+        validate_all_fixtures(&fixtures_dir, &sensor_schema)?;
     }
 
     eprintln!("schema-check: all validations passed");
@@ -110,13 +116,13 @@ fn validate_fixture(path: &Path, envelope: &jsonschema::JSONSchema) -> anyhow::R
     // Additional validation for env-check reports:
     // Verify schema field matches expected value
     if let Some(schema_field) = json.get("schema").and_then(|v| v.as_str()) {
-        if schema_field == "env-check.report.v1" {
+        if schema_field == "sensor.report.v1" {
             // Verify tool.name is "env-check"
             if let Some(tool) = json.get("tool") {
                 if let Some(name) = tool.get("name").and_then(|v| v.as_str()) {
                     if name != "env-check" {
                         bail!(
-                            "{} has schema 'env-check.report.v1' but tool.name is '{}' (expected 'env-check')",
+                            "{} has schema 'sensor.report.v1' but tool.name is '{}' (expected 'env-check')",
                             path.display(),
                             name
                         );
@@ -136,7 +142,7 @@ fn create_example_fixtures() -> anyhow::Result<()> {
 
     // Example: passing report
     let pass_report = serde_json::json!({
-        "schema": "env-check.report.v1",
+        "schema": "sensor.report.v1",
         "tool": {
             "name": "env-check",
             "version": "0.1.0"
@@ -159,7 +165,7 @@ fn create_example_fixtures() -> anyhow::Result<()> {
 
     // Example: failing report with findings
     let fail_report = serde_json::json!({
-        "schema": "env-check.report.v1",
+        "schema": "sensor.report.v1",
         "tool": {
             "name": "env-check",
             "version": "0.1.0"
@@ -267,9 +273,9 @@ fn conform() -> anyhow::Result<()> {
     eprintln!("=============================");
 
     // Load schema for validation
-    let envelope_json = load_schema_json("schemas/receipt.envelope.v1.json")?;
-    let envelope_schema = jsonschema::JSONSchema::compile(&envelope_json)
-        .map_err(|e| anyhow::anyhow!("compile envelope schema: {}", e))?;
+    let sensor_json = load_schema_json("schemas/sensor.report.v1.schema.json")?;
+    let sensor_schema = jsonschema::JSONSchema::compile(&sensor_json)
+        .map_err(|e| anyhow::anyhow!("compile sensor schema: {}", e))?;
 
     // Track results
     let mut static_passed = 0;
@@ -301,7 +307,7 @@ fn conform() -> anyhow::Result<()> {
     if pass_basic.exists() {
         match run_env_check_on_fixture(&pass_basic, &temp_dir, "pass_basic") {
             Ok(report_path) => {
-                match validate_report_against_schema(&report_path, &envelope_schema) {
+                match validate_report_against_schema(&report_path, &sensor_schema) {
                     Ok(()) => {
                         static_passed += 1;
                         eprintln!("  PASS: pass_basic produces valid receipt");
@@ -321,7 +327,7 @@ fn conform() -> anyhow::Result<()> {
     if fail_missing.exists() {
         match run_env_check_on_fixture(&fail_missing, &temp_dir, "fail_missing") {
             Ok(report_path) => {
-                match validate_report_against_schema(&report_path, &envelope_schema) {
+                match validate_report_against_schema(&report_path, &sensor_schema) {
                     Ok(()) => {
                         // Also verify it contains the expected finding code
                         match verify_contains_finding(&report_path, "env.missing_tool") {
@@ -339,7 +345,7 @@ fn conform() -> anyhow::Result<()> {
                 // Exit code non-zero is expected, check if report was written
                 let report_path = temp_dir.join("fail_missing_report.json");
                 if report_path.exists() {
-                    match validate_report_against_schema(&report_path, &envelope_schema) {
+                    match validate_report_against_schema(&report_path, &sensor_schema) {
                         Ok(()) => {
                             static_passed += 1;
                             eprintln!(
@@ -363,7 +369,7 @@ fn conform() -> anyhow::Result<()> {
     if no_sources.exists() {
         match run_env_check_on_fixture(&no_sources, &temp_dir, "no_sources") {
             Ok(report_path) => {
-                match validate_report_against_schema(&report_path, &envelope_schema) {
+                match validate_report_against_schema(&report_path, &sensor_schema) {
                     Ok(()) => {
                         // Verify verdict is skip
                         match verify_verdict_status(&report_path, "skip") {
@@ -457,7 +463,7 @@ fn conform() -> anyhow::Result<()> {
             Ok(output) => {
                 // Even if exit code is non-zero, receipt should be written
                 if report_path.exists() {
-                    match validate_report_against_schema(&report_path, &envelope_schema) {
+                    match validate_report_against_schema(&report_path, &sensor_schema) {
                         Ok(()) => {
                             // Check for tool.runtime_error finding
                             match verify_contains_finding(&report_path, "tool.runtime_error") {

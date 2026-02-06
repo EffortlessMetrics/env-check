@@ -8,7 +8,7 @@ This plan is sequenced to land small, reversible increments while keeping contra
 
 - Workspace and microcrate layout (types/sources/probe/domain/render/app/cli)
 - JSON schemas:
-  - `schemas/receipt.envelope.v1.json`
+  - `schemas/sensor.report.v1.schema.json`
   - `schemas/env-check.report.v1.json`
 - Canonical artifact paths baked into CLI defaults
 - Initial `env-check explain` registry (codes + remediation stubs)
@@ -17,7 +17,7 @@ This plan is sequenced to land small, reversible increments while keeping contra
 ### Definition of done
 
 - [x] `env-check check --root <fixture>` produces `report.json`
-- [x] Receipt validates against `env-check.report.v1.json`
+- [x] Receipt validates against `sensor.report.v1.schema.json`
 - [x] `env-check md` renders a markdown summary deterministically
 - [x] `xtask schema-check` validates schemas and example fixtures
 

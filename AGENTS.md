@@ -7,7 +7,7 @@ env-check is the machine-truth sensor: it verifies whether a machine/runner sati
 - Do not enforce repo policy or mutate the repository.
 - Do not reach the network by default.
 - Canonical artifacts: `artifacts/env-check/report.json` (always), `artifacts/env-check/comment.md` (optional), `artifacts/env-check/raw.log` (debug only).
-- Receipt contract: `schema = "env-check.report.v1"`, strict top-level envelope, extension only via `data` and `finding.data`.
+- Receipt contract: `schema = "sensor.report.v1"`, strict top-level envelope, extension only via `data` and `finding.data`.
 - Tool/runtime error semantics: exit code `1`, write a valid receipt when possible, set `verdict.status="fail"`, add `"tool_error"` to `verdict.reasons`, include exactly one `tool.runtime_error` finding.
 - Determinism: stable ordering and sorting rules; findings ordered by `severity desc -> path -> check_id -> code -> message`.
 - Dependency direction: `types <- (sources|probe|domain|render) <- app <- cli`.

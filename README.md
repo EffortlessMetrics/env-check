@@ -101,12 +101,12 @@ env-check explain env.missing_tool
 
 ## Contract compatibility
 
-env-check emits `env-check.report.v1`, which is an instance of the shared receipt envelope.
+env-check emits `sensor.report.v1`, which is an instance of the shared sensor report schema.
 Tool-specific details live under `data` only.
 
 See:
 
-- `schemas/receipt.envelope.v1.json`
+- `schemas/sensor.report.v1.schema.json`
 - `schemas/env-check.report.v1.json`
 
 ## Final statement

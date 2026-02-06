@@ -120,7 +120,7 @@ env-check MUST write:
 
 Receipt requirements:
 
-- schema id: `env-check.report.v1`
+- schema id: `sensor.report.v1`
 - envelope required fields present even when early failures occur (best-effort)
 - top-level keys strict; tool-specific payload under `data` only
 
@@ -199,7 +199,7 @@ Target: sub-second on typical repos (excluding the cost of probes themselves).
 - [x] `.tool-versions` and `.mise.toml` are parsed into normalized requirements deterministically.
 - [x] Missing required tool under `team` yields error finding + exit code `2`.
 - [x] Version mismatch yields warn/error depending on profile.
-- [x] Receipt validates against `schemas/env-check.report.v1.json`.
+- [x] Receipt validates against `schemas/sensor.report.v1.schema.json`.
 - [x] Golden fixtures cover parsing + evaluation + markdown rendering.
 - [x] A fuzz target exists for each parser (never panic).
 - [x] Mutation testing is wired and timeboxed in CI.

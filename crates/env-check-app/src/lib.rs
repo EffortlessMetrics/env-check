@@ -13,9 +13,9 @@ use env_check_probe::{
 };
 use env_check_sources::ParsedSources;
 use env_check_types::{
-    codes, Capabilities, CiMeta, Counts, FailOn, Finding, GitMeta, HostMeta, Observation,
-    PolicyConfig, Profile, ReceiptEnvelope, Requirement, RunMeta, Severity, SourceKind, ToolMeta,
-    Verdict, VerdictStatus, SCHEMA_ID, TOOL_NAME,
+    codes, Capabilities, CapabilityEntry, CapabilityStatus, CiMeta, Counts, FailOn, Finding,
+    GitMeta, HostMeta, Observation, PolicyConfig, Profile, ReceiptEnvelope, Requirement, RunMeta,
+    Severity, SourceKind, ToolMeta, Verdict, VerdictStatus, SCHEMA_ID, TOOL_NAME,
 };
 
 use serde::Deserialize;
@@ -120,7 +120,7 @@ pub fn run_check_with_clock(
         .max(0) as u64;
 
     // Build receipt envelope.
-    let data = build_data(&policy, &parsed, &outcome);
+    let data = build_data(&policy, &parsed, &requirements, &outcome);
     let git = detect_git(root);
     let capabilities = build_capabilities(&parsed, &requirements, git.as_ref());
 
@@ -235,9 +235,26 @@ fn normalize_requirements(
 fn build_data(
     policy: &PolicyConfig,
     parsed: &ParsedSources,
+    requirements: &[Requirement],
     outcome: &DomainOutcome,
 ) -> serde_json::Value {
+    use std::collections::BTreeSet;
     use serde_json::json;
+
+    let source_kinds: Vec<String> = parsed
+        .sources_used
+        .iter()
+        .map(|s| source_kind_to_string(&s.kind))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+
+    let probe_kinds: Vec<String> = requirements
+        .iter()
+        .map(|r| probe_kind_to_string(&r.probe_kind))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
 
     json!({
         "profile": match policy.profile { Profile::Oss => "oss", Profile::Team => "team", Profile::Strict => "strict" },
@@ -246,6 +263,10 @@ fn build_data(
         "requirements_total": outcome.requirements_total,
         "requirements_failed": outcome.requirements_failed,
         "truncated": outcome.truncated,
+        "observed": {
+            "source_kinds": source_kinds,
+            "probe_kinds": probe_kinds,
+        },
     })
 }
 
@@ -258,29 +279,47 @@ fn build_capabilities(
     requirements: &[Requirement],
     git: Option<&GitMeta>,
 ) -> Capabilities {
-    use std::collections::BTreeSet;
-
-    // Collect unique source kinds that were parsed
-    let sources: Vec<String> = parsed
-        .sources_used
-        .iter()
-        .map(|s| source_kind_to_string(&s.kind))
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect();
-
-    // Collect unique probe kinds that will be/were used
-    let probes: Vec<String> = requirements
-        .iter()
-        .map(|r| probe_kind_to_string(&r.probe_kind))
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect();
-
     Capabilities {
-        git: git.is_some(),
-        sources,
-        probes,
+        git: CapabilityEntry {
+            status: if git.is_some() {
+                CapabilityStatus::Available
+            } else {
+                CapabilityStatus::Unavailable
+            },
+            reason: if git.is_none() {
+                Some("no git repository detected".into())
+            } else {
+                None
+            },
+        },
+        baseline: CapabilityEntry {
+            status: CapabilityStatus::Skipped,
+            reason: Some("env-check does not use baseline comparison".into()),
+        },
+        inputs: CapabilityEntry {
+            status: if parsed.sources_used.is_empty() {
+                CapabilityStatus::Unavailable
+            } else {
+                CapabilityStatus::Available
+            },
+            reason: if parsed.sources_used.is_empty() {
+                Some("no source files found".into())
+            } else {
+                None
+            },
+        },
+        engine: CapabilityEntry {
+            status: if requirements.is_empty() {
+                CapabilityStatus::Skipped
+            } else {
+                CapabilityStatus::Available
+            },
+            reason: if requirements.is_empty() {
+                Some("no requirements to probe".into())
+            } else {
+                None
+            },
+        },
     }
 }
 

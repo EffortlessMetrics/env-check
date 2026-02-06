@@ -263,8 +263,8 @@ async fn then_report_valid_against_schema(world: &mut EnvWorld) {
         .expect("report JSON should exist");
 
     // Load the schema from the project root
-    let schema_path =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../schemas/receipt.envelope.v1.json");
+    let schema_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../schemas/sensor.report.v1.schema.json");
 
     let schema_bytes = fs::read(&schema_path).expect("failed to read schema file");
     let schema_json: Value =

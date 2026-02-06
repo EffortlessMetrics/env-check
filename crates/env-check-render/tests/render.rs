@@ -13,7 +13,7 @@ fn make_receipt(
     data: Option<serde_json::Value>,
 ) -> ReceiptEnvelope {
     ReceiptEnvelope {
-        schema: "env-check.report.v1".to_string(),
+        schema: "sensor.report.v1".to_string(),
         tool: ToolMeta {
             name: "env-check".to_string(),
             version: "0.1.0".to_string(),
@@ -46,7 +46,7 @@ fn make_receipt_with_run_meta(
     run: RunMeta,
 ) -> ReceiptEnvelope {
     ReceiptEnvelope {
-        schema: "env-check.report.v1".to_string(),
+        schema: "sensor.report.v1".to_string(),
         tool: ToolMeta {
             name: "env-check".to_string(),
             version: "0.1.0".to_string(),

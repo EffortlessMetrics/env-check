@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 pub const TOOL_NAME: &str = "env-check";
-pub const SCHEMA_ID: &str = "env-check.report.v1";
+pub const SCHEMA_ID: &str = "sensor.report.v1";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -51,22 +51,38 @@ pub struct ToolMeta {
     pub commit: Option<String>,
 }
 
+/// Status of a single sensor capability.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CapabilityStatus {
+    Available,
+    Unavailable,
+    Skipped,
+}
+
+/// A single capability entry with status and optional reason.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CapabilityEntry {
+    pub status: CapabilityStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
 /// Declares what the sensor actually checked ("No Green By Omission").
 ///
 /// This allows downstream consumers to distinguish between:
-/// - "We checked for X and found nothing wrong" (capability present, no findings)
-/// - "We didn't check for X at all" (capability absent)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+/// - "We checked for X and found nothing wrong" (capability available, no findings)
+/// - "We didn't check for X at all" (capability unavailable/skipped)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Capabilities {
     /// Whether git metadata was detected and used.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub git: bool,
-    /// Source file types that were parsed (e.g., "tool-versions", "mise", "rust-toolchain").
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub sources: Vec<String>,
-    /// Probe types that were used (e.g., "path", "rustup", "hash").
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub probes: Vec<String>,
+    pub git: CapabilityEntry,
+    /// Whether baseline comparison was performed.
+    pub baseline: CapabilityEntry,
+    /// Whether input source files were discovered and parsed.
+    pub inputs: CapabilityEntry,
+    /// Whether the probe engine ran checks.
+    pub engine: CapabilityEntry,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -331,53 +347,53 @@ mod tests {
     use super::*;
 
     #[test]
-    fn capabilities_default_is_empty() {
-        let caps = Capabilities::default();
-        assert!(!caps.git);
-        assert!(caps.sources.is_empty());
-        assert!(caps.probes.is_empty());
+    fn capability_status_serializes_to_snake_case() {
+        let json = serde_json::to_string(&CapabilityStatus::Available).unwrap();
+        assert_eq!(json, "\"available\"");
+        let json = serde_json::to_string(&CapabilityStatus::Unavailable).unwrap();
+        assert_eq!(json, "\"unavailable\"");
+        let json = serde_json::to_string(&CapabilityStatus::Skipped).unwrap();
+        assert_eq!(json, "\"skipped\"");
+    }
+
+    #[test]
+    fn capability_entry_serialization_round_trip() {
+        let entry = CapabilityEntry {
+            status: CapabilityStatus::Available,
+            reason: None,
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        let parsed: CapabilityEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(entry, parsed);
+        // reason=None should be omitted
+        assert!(!json.contains("reason"));
+    }
+
+    #[test]
+    fn capability_entry_with_reason() {
+        let entry = CapabilityEntry {
+            status: CapabilityStatus::Unavailable,
+            reason: Some("no git repository detected".into()),
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["status"], "unavailable");
+        assert_eq!(value["reason"], "no git repository detected");
     }
 
     #[test]
     fn capabilities_serialization_round_trip() {
         let caps = Capabilities {
-            git: true,
-            sources: vec!["tool-versions".into(), "mise".into()],
-            probes: vec!["path".into(), "rustup".into()],
+            git: CapabilityEntry { status: CapabilityStatus::Available, reason: None },
+            baseline: CapabilityEntry { status: CapabilityStatus::Skipped, reason: Some("env-check does not use baseline comparison".into()) },
+            inputs: CapabilityEntry { status: CapabilityStatus::Available, reason: None },
+            engine: CapabilityEntry { status: CapabilityStatus::Available, reason: None },
         };
 
         let json = serde_json::to_string(&caps).unwrap();
         let parsed: Capabilities = serde_json::from_str(&json).unwrap();
 
         assert_eq!(caps, parsed);
-    }
-
-    #[test]
-    fn capabilities_empty_fields_omitted_in_json() {
-        let caps = Capabilities::default();
-        let json = serde_json::to_string(&caps).unwrap();
-
-        // Empty capabilities should serialize to empty object
-        assert_eq!(json, "{}");
-    }
-
-    #[test]
-    fn capabilities_partial_fields_serialized() {
-        let caps = Capabilities {
-            git: true,
-            sources: vec![],
-            probes: vec!["path".into()],
-        };
-
-        let json = serde_json::to_string(&caps).unwrap();
-        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
-
-        // git=true should be present
-        assert_eq!(value.get("git"), Some(&serde_json::json!(true)));
-        // Empty sources should be omitted
-        assert!(value.get("sources").is_none());
-        // Non-empty probes should be present
-        assert_eq!(value.get("probes"), Some(&serde_json::json!(["path"])));
     }
 
     #[test]
@@ -392,9 +408,10 @@ mod tests {
             ci: None,
             git: None,
             capabilities: Some(Capabilities {
-                git: true,
-                sources: vec!["tool-versions".into()],
-                probes: vec!["path".into()],
+                git: CapabilityEntry { status: CapabilityStatus::Available, reason: None },
+                baseline: CapabilityEntry { status: CapabilityStatus::Skipped, reason: Some("not supported".into()) },
+                inputs: CapabilityEntry { status: CapabilityStatus::Available, reason: None },
+                engine: CapabilityEntry { status: CapabilityStatus::Available, reason: None },
             }),
         };
 
@@ -403,7 +420,7 @@ mod tests {
 
         assert_eq!(run, parsed);
         assert!(parsed.capabilities.is_some());
-        assert!(parsed.capabilities.as_ref().unwrap().git);
+        assert_eq!(parsed.capabilities.as_ref().unwrap().git.status, CapabilityStatus::Available);
     }
 
     #[test]

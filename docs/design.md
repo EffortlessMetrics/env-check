@@ -249,7 +249,7 @@ The cockpit director should not parse this markdown; it is primarily for standal
 
 ## Schemas
 
-- `schemas/receipt.envelope.v1.json` is the shared bus schema
+- `schemas/sensor.report.v1.schema.json` is the shared sensor report schema
 - `schemas/env-check.report.v1.json` constrains `schema` and `tool.name`
 
 The code should include a `schema_id` constant and a schema version string in the output to support compatibility checks.

@@ -18,7 +18,7 @@ fn envelope_schema() -> JSONSchema {
         .join("..")
         .join("..")
         .join("schemas")
-        .join("receipt.envelope.v1.json");
+        .join("sensor.report.v1.schema.json");
     let schema_bytes = fs::read_to_string(&schema_path)
         .unwrap_or_else(|e| panic!("read schema {}: {}", schema_path.display(), e));
     let schema_json: Value = serde_json::from_str(&schema_bytes)
@@ -523,8 +523,8 @@ fn report_json_has_valid_structure() {
     // Verify schema value
     assert_eq!(
         json["schema"].as_str().unwrap(),
-        "env-check.report.v1",
-        "Schema should be 'env-check.report.v1'"
+        "sensor.report.v1",
+        "Schema should be 'sensor.report.v1'"
     );
 
     // Verify tool structure

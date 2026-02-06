@@ -85,8 +85,8 @@ artifacts/env-check/raw.log       # optional probe transcript (debugging)
 
 ### Receipt contract
 
-- `schema`: `env-check.report.v1`
-- Must conform to `schemas/receipt.envelope.v1.json`
+- `schema`: `sensor.report.v1`
+- Must conform to `schemas/sensor.report.v1.schema.json`
 - Tool-specific details are stored under `data` only (one extension point).
 
 ### Verdict semantics

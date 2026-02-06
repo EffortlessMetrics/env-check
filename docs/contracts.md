@@ -6,20 +6,20 @@ env-check speaks in receipts. This is a deliberately small API.
 
 All receipts conform to `receipt.envelope.v1`:
 
-- `schema` — identifies the concrete report schema (e.g., `env-check.report.v1`)
+- `schema` — identifies the concrete report schema (e.g., `sensor.report.v1`)
 - `tool` — `{ name, version, commit? }`
 - `run` — timestamps + (optional) host/ci/git metadata
 - `verdict` — `{ status, counts, reasons[] }`
 - `findings[]` — stable codes, human messages, best-effort locations
 - `data` — tool-specific extension point (structured; schema-defined per tool)
 
-See: `schemas/receipt.envelope.v1.json`.
+See: `schemas/sensor.report.v1.schema.json`.
 
 ## env-check report
 
 `env-check.report.v1` constrains:
 
-- `schema == "env-check.report.v1"`
+- `schema == "sensor.report.v1"`
 - `tool.name == "env-check"`
 - `data` shape (sources used, policy hints, truncation markers)
 
@@ -40,7 +40,7 @@ Each emitted code must have an `env-check explain` entry.
 
 ## Compatibility contract
 
-The receipt schema (`env-check.report.v1`) and finding codes are public APIs.
+The receipt schema (`sensor.report.v1`) and finding codes are public APIs.
 Compatibility rules:
 
 - **Patch releases**: no schema or code changes.
