@@ -426,82 +426,61 @@ fn detect_host() -> Option<HostMeta> {
 
 /// Detect CI provider metadata via environment variables.
 fn detect_ci() -> Option<CiMeta> {
+    detect_ci_from_env(|key| std::env::var(key).ok())
+}
+
+/// Inner implementation that accepts an env-lookup closure for testability.
+fn detect_ci_from_env(env: impl Fn(&str) -> Option<String>) -> Option<CiMeta> {
     // GitHub Actions
-    if std::env::var("GITHUB_ACTIONS").is_ok() {
+    if env("GITHUB_ACTIONS").is_some() {
         return Some(CiMeta {
             provider: "github".to_string(),
-            job: std::env::var("GITHUB_JOB").ok(),
-            run_id: std::env::var("GITHUB_RUN_ID").ok(),
-            workflow: std::env::var("GITHUB_WORKFLOW")
-                .ok()
-                .filter(|s| !s.is_empty()),
-            repository: std::env::var("GITHUB_REPOSITORY")
-                .ok()
-                .filter(|s| !s.is_empty()),
-            git_ref: std::env::var("GITHUB_REF").ok().filter(|s| !s.is_empty()),
-            sha: std::env::var("GITHUB_SHA").ok().filter(|s| !s.is_empty()),
+            job: env("GITHUB_JOB"),
+            run_id: env("GITHUB_RUN_ID"),
+            workflow: env("GITHUB_WORKFLOW").filter(|s| !s.is_empty()),
+            repository: env("GITHUB_REPOSITORY").filter(|s| !s.is_empty()),
+            git_ref: env("GITHUB_REF").filter(|s| !s.is_empty()),
+            sha: env("GITHUB_SHA").filter(|s| !s.is_empty()),
         });
     }
     // GitLab CI
-    if std::env::var("GITLAB_CI").is_ok() {
+    if env("GITLAB_CI").is_some() {
         return Some(CiMeta {
             provider: "gitlab".to_string(),
-            job: std::env::var("CI_JOB_NAME").ok(),
-            run_id: std::env::var("CI_JOB_ID").ok(),
-            workflow: std::env::var("CI_PIPELINE_NAME")
-                .ok()
-                .filter(|s| !s.is_empty()),
-            repository: std::env::var("CI_PROJECT_PATH")
-                .ok()
-                .filter(|s| !s.is_empty()),
-            git_ref: std::env::var("CI_COMMIT_REF_NAME")
-                .ok()
-                .filter(|s| !s.is_empty()),
-            sha: std::env::var("CI_COMMIT_SHA")
-                .ok()
-                .filter(|s| !s.is_empty()),
+            job: env("CI_JOB_NAME"),
+            run_id: env("CI_JOB_ID"),
+            workflow: env("CI_PIPELINE_NAME").filter(|s| !s.is_empty()),
+            repository: env("CI_PROJECT_PATH").filter(|s| !s.is_empty()),
+            git_ref: env("CI_COMMIT_REF_NAME").filter(|s| !s.is_empty()),
+            sha: env("CI_COMMIT_SHA").filter(|s| !s.is_empty()),
         });
     }
     // CircleCI
-    if std::env::var("CIRCLECI").is_ok() {
+    if env("CIRCLECI").is_some() {
         return Some(CiMeta {
             provider: "circleci".to_string(),
-            job: std::env::var("CIRCLE_JOB").ok(),
-            run_id: std::env::var("CIRCLE_BUILD_NUM").ok(),
-            workflow: std::env::var("CIRCLE_WORKFLOW_ID")
-                .ok()
-                .filter(|s| !s.is_empty()),
-            repository: std::env::var("CIRCLE_PROJECT_REPONAME")
-                .ok()
-                .filter(|s| !s.is_empty()),
-            git_ref: std::env::var("CIRCLE_BRANCH")
-                .ok()
-                .filter(|s| !s.is_empty()),
-            sha: std::env::var("CIRCLE_SHA1").ok().filter(|s| !s.is_empty()),
+            job: env("CIRCLE_JOB"),
+            run_id: env("CIRCLE_BUILD_NUM"),
+            workflow: env("CIRCLE_WORKFLOW_ID").filter(|s| !s.is_empty()),
+            repository: env("CIRCLE_PROJECT_REPONAME").filter(|s| !s.is_empty()),
+            git_ref: env("CIRCLE_BRANCH").filter(|s| !s.is_empty()),
+            sha: env("CIRCLE_SHA1").filter(|s| !s.is_empty()),
         });
     }
     // Azure Pipelines
-    if std::env::var("TF_BUILD").is_ok() {
+    if env("TF_BUILD").is_some() {
         return Some(CiMeta {
             provider: "azure".to_string(),
-            job: std::env::var("SYSTEM_JOBDISPLAYNAME").ok(),
-            run_id: std::env::var("BUILD_BUILDID").ok(),
-            workflow: std::env::var("BUILD_DEFINITIONNAME")
-                .ok()
-                .filter(|s| !s.is_empty()),
-            repository: std::env::var("BUILD_REPOSITORY_NAME")
-                .ok()
-                .filter(|s| !s.is_empty()),
-            git_ref: std::env::var("BUILD_SOURCEBRANCH")
-                .ok()
-                .filter(|s| !s.is_empty()),
-            sha: std::env::var("BUILD_SOURCEVERSION")
-                .ok()
-                .filter(|s| !s.is_empty()),
+            job: env("SYSTEM_JOBDISPLAYNAME"),
+            run_id: env("BUILD_BUILDID"),
+            workflow: env("BUILD_DEFINITIONNAME").filter(|s| !s.is_empty()),
+            repository: env("BUILD_REPOSITORY_NAME").filter(|s| !s.is_empty()),
+            git_ref: env("BUILD_SOURCEBRANCH").filter(|s| !s.is_empty()),
+            sha: env("BUILD_SOURCEVERSION").filter(|s| !s.is_empty()),
         });
     }
     // Generic CI detection
-    if std::env::var("CI").is_ok() {
+    if env("CI").is_some() {
         return Some(CiMeta {
             provider: "unknown".to_string(),
             job: None,
@@ -944,5 +923,97 @@ mod tests {
 
         // Same clock produces same timestamps
         assert_eq!(receipt1.run.started_at, receipt2.run.started_at);
+    }
+
+    // =========================================================================
+    // CI Detection Tests
+    // =========================================================================
+
+    fn env_from_map<'a>(map: &'a std::collections::HashMap<&'a str, &'a str>) -> impl Fn(&str) -> Option<String> + 'a {
+        move |key| map.get(key).map(|v| v.to_string())
+    }
+
+    #[test]
+    fn test_detect_ci_github_actions_all_fields() {
+        let vars: std::collections::HashMap<&str, &str> = [
+            ("GITHUB_ACTIONS", "true"),
+            ("GITHUB_JOB", "build"),
+            ("GITHUB_RUN_ID", "12345"),
+            ("GITHUB_WORKFLOW", "CI"),
+            ("GITHUB_REPOSITORY", "owner/repo"),
+            ("GITHUB_REF", "refs/heads/main"),
+            ("GITHUB_SHA", "abc123"),
+        ]
+        .into_iter()
+        .collect();
+
+        let ci = detect_ci_from_env(env_from_map(&vars)).unwrap();
+        assert_eq!(ci.provider, "github");
+        assert_eq!(ci.job.as_deref(), Some("build"));
+        assert_eq!(ci.run_id.as_deref(), Some("12345"));
+        assert_eq!(ci.workflow.as_deref(), Some("CI"));
+        assert_eq!(ci.repository.as_deref(), Some("owner/repo"));
+        assert_eq!(ci.git_ref.as_deref(), Some("refs/heads/main"));
+        assert_eq!(ci.sha.as_deref(), Some("abc123"));
+    }
+
+    #[test]
+    fn test_detect_ci_gitlab() {
+        let vars: std::collections::HashMap<&str, &str> = [
+            ("GITLAB_CI", "true"),
+            ("CI_JOB_NAME", "test"),
+            ("CI_JOB_ID", "999"),
+            ("CI_PROJECT_PATH", "group/project"),
+            ("CI_COMMIT_REF_NAME", "develop"),
+            ("CI_COMMIT_SHA", "def456"),
+        ]
+        .into_iter()
+        .collect();
+
+        let ci = detect_ci_from_env(env_from_map(&vars)).unwrap();
+        assert_eq!(ci.provider, "gitlab");
+        assert_eq!(ci.job.as_deref(), Some("test"));
+        assert_eq!(ci.run_id.as_deref(), Some("999"));
+        assert_eq!(ci.repository.as_deref(), Some("group/project"));
+        assert_eq!(ci.git_ref.as_deref(), Some("develop"));
+        assert_eq!(ci.sha.as_deref(), Some("def456"));
+        assert_eq!(ci.workflow, None); // CI_PIPELINE_NAME not set
+    }
+
+    #[test]
+    fn test_detect_ci_none_when_no_vars() {
+        let vars: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
+        assert!(detect_ci_from_env(env_from_map(&vars)).is_none());
+    }
+
+    #[test]
+    fn test_detect_ci_empty_strings_filtered() {
+        let vars: std::collections::HashMap<&str, &str> = [
+            ("GITHUB_ACTIONS", "true"),
+            ("GITHUB_WORKFLOW", ""),
+            ("GITHUB_SHA", ""),
+            ("GITHUB_REF", ""),
+            ("GITHUB_REPOSITORY", ""),
+        ]
+        .into_iter()
+        .collect();
+
+        let ci = detect_ci_from_env(env_from_map(&vars)).unwrap();
+        assert_eq!(ci.provider, "github");
+        assert_eq!(ci.workflow, None);
+        assert_eq!(ci.sha, None);
+        assert_eq!(ci.git_ref, None);
+        assert_eq!(ci.repository, None);
+    }
+
+    #[test]
+    fn test_detect_ci_generic_fallback() {
+        let vars: std::collections::HashMap<&str, &str> =
+            [("CI", "true")].into_iter().collect();
+
+        let ci = detect_ci_from_env(env_from_map(&vars)).unwrap();
+        assert_eq!(ci.provider, "unknown");
+        assert!(ci.job.is_none());
+        assert!(ci.run_id.is_none());
     }
 }
