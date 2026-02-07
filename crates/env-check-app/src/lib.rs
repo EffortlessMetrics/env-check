@@ -929,7 +929,9 @@ mod tests {
     // CI Detection Tests
     // =========================================================================
 
-    fn env_from_map<'a>(map: &'a std::collections::HashMap<&'a str, &'a str>) -> impl Fn(&str) -> Option<String> + 'a {
+    fn env_from_map<'a>(
+        map: &'a std::collections::HashMap<&'a str, &'a str>,
+    ) -> impl Fn(&str) -> Option<String> + 'a {
         move |key| map.get(key).map(|v| v.to_string())
     }
 
@@ -1008,8 +1010,7 @@ mod tests {
 
     #[test]
     fn test_detect_ci_generic_fallback() {
-        let vars: std::collections::HashMap<&str, &str> =
-            [("CI", "true")].into_iter().collect();
+        let vars: std::collections::HashMap<&str, &str> = [("CI", "true")].into_iter().collect();
 
         let ci = detect_ci_from_env(env_from_map(&vars)).unwrap();
         assert_eq!(ci.provider, "unknown");
