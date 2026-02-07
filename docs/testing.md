@@ -5,7 +5,7 @@ env-check is a gatekeeper tool. The test posture is intentionally heavy.
 ## Test layers
 
 ### Unit tests
-- Parsers: `.tool-versions`, `.mise.toml`, `rust-toolchain.toml`, hash manifests
+- Parsers: `.tool-versions`, `.mise.toml`, `rust-toolchain.toml`, hash manifests, `.node-version`, `.nvmrc`, `package.json`, `.python-version`, `pyproject.toml`, `go.mod`
 - Domain evaluation: mapping requirements + observations → findings + verdict
 - Rendering: report → markdown (pure)
 
@@ -25,11 +25,13 @@ env-check is a gatekeeper tool. The test posture is intentionally heavy.
 ### Fuzzing (cargo fuzz)
 - Parsers never panic on arbitrary bytes.
 - The goal is robustness, not correctness over every invalid input.
+- See "Fuzz targets" section below for complete list.
 
 ### Mutation testing (cargo-mutants)
 - Timeboxed in CI.
 - Focus on domain evaluation and parser branching logic.
-- Treat “mutant survived” as a reason to add a test, not as a debate.
+- Treat "mutant survived" as a reason to add a test, not as a debate.
+- Run via `cargo run -p xtask -- mutants`
 
 ## Running tests locally
 
@@ -43,13 +45,36 @@ cargo insta accept
 # BDD
 cargo test -p env-check-cli --test bdd
 
-# Mutation testing (timeboxed)
+# Mutation testing (via xtask, recommended)
+cargo run -p xtask -- mutants
+
+# Mutation testing (direct)
 cargo mutants -p env-check-domain
 
-# Fuzzing (requires cargo-fuzz)
+# Fuzzing (requires cargo-fuzz and nightly)
 cargo fuzz list
 cargo fuzz run parse_tool_versions
+cargo fuzz run fuzz_go_mod -- -max_total_time=300
 ```
+
+## Fuzz targets
+
+All source parsers have corresponding fuzz targets:
+
+| Target | Parser |
+|--------|--------|
+| `parse_tool_versions` | `.tool-versions` |
+| `parse_mise_toml` | `.mise.toml` |
+| `parse_rust_toolchain` | `rust-toolchain.toml` |
+| `parse_hash_manifest` | hash manifest |
+| `fuzz_node_version` | `.node-version` |
+| `fuzz_nvmrc` | `.nvmrc` |
+| `fuzz_package_json` | `package.json` |
+| `fuzz_python_version` | `.python-version` |
+| `fuzz_pyproject_toml` | `pyproject.toml` |
+| `fuzz_go_mod` | `go.mod` |
+
+Each target has seed corpus files in `fuzz/corpus/<target>/` derived from test fixtures.
 
 ## Golden fixtures
 

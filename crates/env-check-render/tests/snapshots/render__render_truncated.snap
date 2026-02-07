@@ -1,0 +1,12 @@
+---
+source: crates/env-check-render/tests/render.rs
+expression: md
+---
+## env-check: WARN
+
+- Findings: 0 error, 5 warn, 0 info
+- Profile: `oss`
+- Sources: `.tool-versions`
+- Note: output truncated; see `report.json` for full details.
+
+_No findings._

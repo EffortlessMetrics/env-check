@@ -1,0 +1,97 @@
+name: "env-check"
+description: "Machine-truth preflight: validate local tools/toolchains against repo declarations"
+inputs:
+  version:
+    description: "Release tag to install (e.g. v0.1.0). Optional if action is used by tag."
+    required: false
+  profile:
+    description: "oss|team|strict"
+    required: false
+    default: "oss"
+  root:
+    description: "Repo root to scan"
+    required: false
+    default: "."
+  config:
+    description: "Optional env-check config path"
+    required: false
+    default: ""
+  out:
+    description: "Receipt output path"
+    required: false
+    default: "artifacts/env-check/report.json"
+  md:
+    description: "Optional markdown output path"
+    required: false
+    default: ""
+  debug:
+    description: "Enable debug transcript logging"
+    required: false
+    default: "false"
+  log_file:
+    description: "Optional debug log path"
+    required: false
+    default: "artifacts/env-check/raw.log"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Resolve version
+      shell: bash
+      run: |
+        set -euo pipefail
+        V="${{ inputs.version }}"
+        if [ -z "$V" ]; then
+          REF="${{ github.action_ref }}"
+          if echo "$REF" | grep -Eq '^v[0-9]'; then
+            V="$REF"
+          else
+            echo "env-check: version input required when action is not referenced by a vX.Y.Z tag" >&2
+            exit 1
+          fi
+        fi
+        echo "ENV_CHECK_VERSION=$V" >> "$GITHUB_ENV"
+
+    - name: Install env-check (unix)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        set -euo pipefail
+        export CARGO_HOME="${{ runner.temp }}/cargo"
+        mkdir -p "$CARGO_HOME/bin"
+        echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
+
+        curl --proto '=https' --tlsv1.2 -LsSf \
+          "https://github.com/EffortlessMetrics/env-check/releases/download/${ENV_CHECK_VERSION}/env-check-installer.sh" \
+          | sh
+
+    - name: Install env-check (windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $env:CARGO_HOME = Join-Path $env:RUNNER_TEMP "cargo"
+        New-Item -ItemType Directory -Force -Path (Join-Path $env:CARGO_HOME "bin") | Out-Null
+        (Join-Path $env:CARGO_HOME "bin") | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+        $url = "https://github.com/EffortlessMetrics/env-check/releases/download/$env:ENV_CHECK_VERSION/env-check-installer.ps1"
+        powershell -ExecutionPolicy Bypass -c "irm $url | iex"
+
+    - name: Run env-check
+      shell: bash
+      run: |
+        set -euo pipefail
+        ARGS=(check --root "${{ inputs.root }}" --profile "${{ inputs.profile }}" --out "${{ inputs.out }}")
+
+        if [ -n "${{ inputs.md }}" ]; then
+          ARGS+=(--md "${{ inputs.md }}")
+        fi
+
+        if [ -n "${{ inputs.config }}" ]; then
+          ARGS+=(--config "${{ inputs.config }}")
+        fi
+
+        if [ "${{ inputs.debug }}" = "true" ]; then
+          ARGS+=(--debug --log-file "${{ inputs.log_file }}")
+        fi
+
+        env-check "${ARGS[@]}"

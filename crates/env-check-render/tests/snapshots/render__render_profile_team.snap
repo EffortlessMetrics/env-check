@@ -1,0 +1,14 @@
+---
+source: crates/env-check-render/tests/render.rs
+expression: render_markdown(&receipt_team)
+---
+## env-check: FAIL
+
+- Findings: 1 error, 0 warn, 0 info
+- Profile: `team`
+- fail_on: `error`
+- Sources: `.tool-versions`
+
+### Findings
+
+- **error** `env.missing_tool` (.tool-versions) — Missing tool

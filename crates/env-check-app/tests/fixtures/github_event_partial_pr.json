@@ -1,0 +1,15 @@
+{
+  "action": "opened",
+  "number": 123,
+  "pull_request": {
+    "number": 123,
+    "title": "Partial PR data",
+    "state": "open",
+    "base": {
+      "ref": "develop"
+    },
+    "head": {
+      "sha": "partial123456789012345678901234567890abcd"
+    }
+  }
+}

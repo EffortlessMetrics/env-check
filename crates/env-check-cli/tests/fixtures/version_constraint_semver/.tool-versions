@@ -1,0 +1,3 @@
+# Tool with semver range constraint
+# Since PATH is cleared in tests, this becomes a missing tool finding
+nonexistent-semver-tool >=1.0.0

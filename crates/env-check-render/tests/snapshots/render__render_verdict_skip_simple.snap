@@ -1,0 +1,10 @@
+---
+source: crates/env-check-render/tests/render.rs
+expression: md
+---
+## env-check: SKIP
+
+- Findings: 0 error, 0 warn, 0 info
+- Profile: `oss`
+
+_No findings._

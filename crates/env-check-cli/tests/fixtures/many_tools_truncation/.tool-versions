@@ -1,0 +1,12 @@
+# Many tools to trigger truncation behavior
+# Truncation kicks in when findings exceed max_findings (default 100)
+fake-tool-01 1.0.0
+fake-tool-02 1.0.0
+fake-tool-03 1.0.0
+fake-tool-04 1.0.0
+fake-tool-05 1.0.0
+fake-tool-06 1.0.0
+fake-tool-07 1.0.0
+fake-tool-08 1.0.0
+fake-tool-09 1.0.0
+fake-tool-10 1.0.0

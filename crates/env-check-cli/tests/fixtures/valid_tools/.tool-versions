@@ -1,0 +1,3 @@
+# Valid tool-versions file with no requirements
+# This tests that parsing succeeds and zero requirements = pass
+# (PATH is isolated in tests, so we can't actually probe real tools)

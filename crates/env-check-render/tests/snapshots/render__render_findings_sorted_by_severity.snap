@@ -1,0 +1,15 @@
+---
+source: crates/env-check-render/tests/render.rs
+expression: md
+---
+## env-check: FAIL
+
+- Findings: 1 error, 1 warn, 1 info
+- Profile: `team`
+- Sources: `.tool-versions`
+
+### Findings
+
+- **error** `env.error` (b.txt) — Error message
+- **warn** `env.warn` (c.txt) — Warn message
+- **info** `env.info` (a.txt) — Info message

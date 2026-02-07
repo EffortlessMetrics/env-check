@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:effortless:receipt.envelope.v1",
-  "title": "receipt.envelope.v1",
+  "$id": "urn:effortless:sensor.report.v1",
+  "title": "sensor.report.v1",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -80,6 +80,18 @@
             },
             "run_id": {
               "type": "string"
+            },
+            "workflow": {
+              "type": "string"
+            },
+            "repository": {
+              "type": "string"
+            },
+            "git_ref": {
+              "type": "string"
+            },
+            "sha": {
+              "type": "string"
             }
           }
         },
@@ -104,7 +116,23 @@
             },
             "merge_base": {
               "type": "string"
+            },
+            "pr_number": {
+              "type": "integer",
+              "minimum": 1
             }
+          }
+        },
+        "capabilities": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["status"],
+            "properties": {
+              "status": { "enum": ["available", "unavailable", "skipped"] },
+              "reason": { "type": "string" }
+            },
+            "additionalProperties": false
           }
         }
       }

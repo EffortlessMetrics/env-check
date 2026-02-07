@@ -1,0 +1,27 @@
+---
+source: crates/env-check-render/tests/render.rs
+expression: md
+---
+## env-check: FAIL
+
+- Findings: 5 error, 5 warn, 5 info
+- Profile: `strict`
+- Sources: `.tool-versions`
+
+### Findings
+
+- **error** `env.test_1` (file1.txt) — Test finding number 1
+- **error** `env.test_2` (file2.txt) — Test finding number 2
+  - Help for finding 2
+- **error** `env.test_3` (file3.txt) — Test finding number 3
+- **error** `env.test_4` (file4.txt) — Test finding number 4
+  - Help for finding 4
+- **error** `env.test_5` (file5.txt) — Test finding number 5
+- **warn** `env.test_10` (file10.txt) — Test finding number 10
+  - Help for finding 10
+- **warn** `env.test_6` (file6.txt) — Test finding number 6
+  - Help for finding 6
+- **warn** `env.test_7` (file7.txt) — Test finding number 7
+- **warn** `env.test_8` (file8.txt) — Test finding number 8
+  - Help for finding 8
+- **warn** `env.test_9` (file9.txt) — Test finding number 9

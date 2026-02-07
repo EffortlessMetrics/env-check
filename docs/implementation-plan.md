@@ -2,13 +2,13 @@
 
 This plan is sequenced to land small, reversible increments while keeping contracts stable.
 
-## Phase 0 — Contracts and scaffolding
+## Phase 0 — Contracts and scaffolding ✅
 
 ### Deliverables
 
 - Workspace and microcrate layout (types/sources/probe/domain/render/app/cli)
 - JSON schemas:
-  - `schemas/receipt.envelope.v1.json`
+  - `schemas/sensor.report.v1.schema.json`
   - `schemas/env-check.report.v1.json`
 - Canonical artifact paths baked into CLI defaults
 - Initial `env-check explain` registry (codes + remediation stubs)
@@ -16,12 +16,12 @@ This plan is sequenced to land small, reversible increments while keeping contra
 
 ### Definition of done
 
-- [ ] `env-check check --root <fixture>` produces `report.json`
-- [ ] Receipt validates against `env-check.report.v1.json`
-- [ ] `env-check md` renders a markdown summary deterministically
-- [ ] `xtask schema-check` validates schemas and example fixtures
+- [x] `env-check check --root <fixture>` produces `report.json`
+- [x] Receipt validates against `sensor.report.v1.schema.json`
+- [x] `env-check md` renders a markdown summary deterministically
+- [x] `xtask schema-check` validates schemas and example fixtures
 
-## Phase 1 — Source discovery + parsing (repo side)
+## Phase 1 — Source discovery + parsing (repo side) ✅
 
 ### Work
 
@@ -30,6 +30,9 @@ This plan is sequenced to land small, reversible increments while keeping contra
    - `.mise.toml`
    - `rust-toolchain.toml`
    - optional hash manifest (default `scripts/tools.sha256`)
+   - `.node-version`, `.nvmrc`, `package.json` (Node.js)
+   - `.python-version`, `pyproject.toml` (Python)
+   - `go.mod` (Go)
 
 2. Implement parsers with:
    - deterministic ordering
@@ -49,11 +52,11 @@ This plan is sequenced to land small, reversible increments while keeping contra
 
 ### Definition of done
 
-- [ ] `discover(root)` returns stable, predictable sources
-- [ ] parsers produce normalized requirements with provenance
-- [ ] malformed sources produce findings with `env.source_parse_error` (not panics)
+- [x] `parse_all(root)` returns stable, predictable sources
+- [x] parsers produce normalized requirements with provenance
+- [x] malformed sources produce findings with `env.source_parse_error` (not panics)
 
-## Phase 2 — Probing (machine side)
+## Phase 2 — Probing (machine side) ✅
 
 ### Work
 
@@ -79,11 +82,11 @@ This plan is sequenced to land small, reversible increments while keeping contra
 
 ### Definition of done
 
-- [ ] probes are injected via ports (no hard dependencies in domain)
-- [ ] probe failures do not crash; they become findings or tool errors as appropriate
-- [ ] no shell execution anywhere
+- [x] probes are injected via ports (no hard dependencies in domain)
+- [x] probe failures do not crash; they become findings or tool errors as appropriate
+- [x] no shell execution anywhere
 
-## Phase 3 — Evaluation engine (domain)
+## Phase 3 — Evaluation engine (domain) ✅
 
 ### Work
 
@@ -111,11 +114,11 @@ This plan is sequenced to land small, reversible increments while keeping contra
 
 ### Definition of done
 
-- [ ] Domain has no IO and can be tested purely
-- [ ] Deterministic ordering enforced (BTreeMap + explicit sort keys)
-- [ ] Mutation testing catches removed/altered condition branches
+- [x] Domain has no IO and can be tested purely
+- [x] Deterministic ordering enforced (BTreeMap + explicit sort keys)
+- [x] Mutation testing catches removed/altered condition branches
 
-## Phase 4 — CLI UX + renderers
+## Phase 4 — CLI UX + renderers ✅
 
 ### Work
 
@@ -138,11 +141,11 @@ This plan is sequenced to land small, reversible increments while keeping contra
 
 ### Definition of done
 
-- [ ] One-line quickstart works with defaults
-- [ ] CLI exit codes match requirements
-- [ ] Artifacts written in canonical paths without heuristics
+- [x] One-line quickstart works with defaults
+- [x] CLI exit codes match requirements
+- [x] Artifacts written in canonical paths without heuristics
 
-## Phase 5 — Conformance + hardening
+## Phase 5 — Conformance + hardening ✅
 
 ### Work
 
@@ -157,8 +160,8 @@ This plan is sequenced to land small, reversible increments while keeping contra
 
 ### Definition of done
 
-- [ ] CI includes: unit + integration + BDD + proptest + fuzz smoke + mutants (timeboxed)
-- [ ] “no sources” and “partial failure” cases emit meaningful receipts
+- [x] CI includes: unit + integration + BDD + proptest + fuzz smoke + mutants (timeboxed)
+- [x] "no sources" and "partial failure" cases emit meaningful receipts
 
 ## Phase 6 — Release + adoption surface
 
@@ -174,8 +177,31 @@ This plan is sequenced to land small, reversible increments while keeping contra
 
 ### Definition of done
 
-- [ ] A repo can adopt env-check with one workflow step and one config stanza
-- [ ] Output is stable enough that cockpit can treat it as an API
+- [x] A repo can adopt env-check with one workflow step and one config stanza
+- [x] Output is stable enough that cockpit can treat it as an API
+
+## Phase 7 — Adoption validation (repo-only)
+
+### Work (checklist)
+
+- Contract conformance:
+  - receipt schema validation stays green (`sensor.report.v1`)
+  - findings ordering is severity desc → path → check_id → code → message
+  - skip receipts include `verdict.reasons = ["no_sources", ...]`
+- Offline-first behavior:
+  - no network access required for normal operation
+  - git metadata collection is best-effort and does not fetch
+- Action usage:
+  - composite action installs a pinned release and writes artifacts
+  - example workflow uploads `artifacts/env-check/`
+- Cockpit ingestion:
+  - docs specify "Environment" section expectations
+  - receipts consumed without adapters or special cases
+- Release readiness gates:
+  - dist workflows present and aligned with targets
+  - release tag `v0.1.0` produces installers + binaries
+
+**Pilots:** skipped (repo-only validation for this phase).
 
 ## BDD scenarios (minimum set)
 

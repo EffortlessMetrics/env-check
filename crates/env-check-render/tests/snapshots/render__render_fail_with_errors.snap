@@ -1,0 +1,18 @@
+---
+source: crates/env-check-render/tests/render.rs
+expression: md
+---
+## env-check: FAIL
+
+- Findings: 2 error, 1 warn, 0 info
+- Profile: `team`
+- fail_on: `error`
+- Sources: `rust-toolchain.toml`, `.tool-versions`
+
+### Findings
+
+- **error** `env.missing_tool` (rust-toolchain.toml) — Missing tool on PATH: rustc
+  - Install rustup
+- **error** `env.missing_tool` (rust-toolchain.toml) — Missing tool on PATH: cargo
+  - Install rustup
+- **warn** `env.version_mismatch` (.tool-versions) — Version mismatch for node

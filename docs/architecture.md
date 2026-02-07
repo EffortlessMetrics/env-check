@@ -25,7 +25,7 @@ env-check should never become “the repo policy gate”. If a repo wants it to 
 
 env-check **does**:
 
-- Parse repo-declared tool requirements from common sources (`rust-toolchain.toml`, `.mise.toml`, `.tool-versions`, hash manifests).
+- Parse repo-declared tool requirements from common sources (`.tool-versions`, `.mise.toml`, `rust-toolchain.toml`, `.node-version`, `.nvmrc`, `package.json`, `.python-version`, `pyproject.toml`, `go.mod`, hash manifests).
 - Probe the local environment (PATH, rustup) to verify presence and versions.
 - Optionally verify local binary hashes when a repo provides a hash manifest.
 - Emit a versioned receipt + (optional) PR-friendly markdown.
@@ -41,10 +41,27 @@ env-check **does not**:
 
 ### Auto-discovered sources (best-effort)
 
-- `rust-toolchain.toml` / `rust-toolchain`
-- `.mise.toml`
+**Version managers:**
 - `.tool-versions` (asdf)
-- repo-provided hash manifests (default path configurable)
+- `.mise.toml`
+
+**Rust:**
+- `rust-toolchain.toml` / `rust-toolchain`
+
+**Node.js:**
+- `.node-version`
+- `.nvmrc`
+- `package.json` (engines.node, engines.npm)
+
+**Python:**
+- `.python-version`
+- `pyproject.toml` (requires-python)
+
+**Go:**
+- `go.mod` (go directive)
+
+**Binary verification:**
+- Hash manifests (default `scripts/tools.sha256`, configurable)
 
 If none exist, env-check should emit a **skip** receipt with reason `no_sources`.
 
@@ -68,8 +85,8 @@ artifacts/env-check/raw.log       # optional probe transcript (debugging)
 
 ### Receipt contract
 
-- `schema`: `env-check.report.v1`
-- Must conform to `schemas/receipt.envelope.v1.json`
+- `schema`: `sensor.report.v1`
+- Must conform to `schemas/sensor.report.v1.schema.json`
 - Tool-specific details are stored under `data` only (one extension point).
 
 ### Verdict semantics

@@ -1,0 +1,5 @@
+# Tool with a version constraint that won't match (nonexistent tool with impossible version)
+# This tool doesn't exist, so we get a "missing" rather than "version mismatch"
+# For a true version mismatch, we need a tool that exists but has wrong version
+# Since we clear PATH, we use a tool that requires a very high version that nothing could satisfy
+nonexistent-version-tool 999.999.999

@@ -1,0 +1,14 @@
+---
+source: crates/env-check-render/tests/render.rs
+expression: md
+---
+## env-check: WARN
+
+- Findings: 0 error, 1 warn, 0 info
+- Profile: `oss`
+- Sources: `.tool-versions`
+
+### Findings
+
+- **warn** `env.version_mismatch` (.tool-versions) — Version constraint `>=3.10 && <4.0` not satisfied by `3.9.7`
+  - Install python matching constraint: `>=3.10 && <4.0`

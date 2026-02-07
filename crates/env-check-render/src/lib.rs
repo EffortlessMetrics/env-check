@@ -28,7 +28,10 @@ pub fn render_markdown(report: &ReceiptEnvelope) -> String {
             out.push_str(&format!("- fail_on: `{}`\n", fail_on));
         }
         if let Some(srcs) = data.get("sources_used").and_then(|v| v.as_array()) {
-            let list: Vec<String> = srcs.iter().filter_map(|x| x.as_str().map(|s| format!("`{}`", s))).collect();
+            let list: Vec<String> = srcs
+                .iter()
+                .filter_map(|x| x.as_str().map(|s| format!("`{}`", s)))
+                .collect();
             if !list.is_empty() {
                 out.push_str(&format!("- Sources: {}\n", list.join(", ")));
             }
@@ -38,11 +41,17 @@ pub fn render_markdown(report: &ReceiptEnvelope) -> String {
         }
     }
 
-    out.push_str("\n");
+    out.push('\n');
 
     // Show up to 10 findings, prioritizing errors then warns.
     let mut items: Vec<_> = report.findings.iter().collect();
-    items.sort_by(|a, b| a.severity.rank().cmp(&b.severity.rank()).reverse().then(a.code.cmp(&b.code)));
+    items.sort_by(|a, b| {
+        a.severity
+            .rank()
+            .cmp(&b.severity.rank())
+            .reverse()
+            .then(a.code.cmp(&b.code))
+    });
 
     let max = 10usize;
     if items.is_empty() {
@@ -64,10 +73,16 @@ pub fn render_markdown(report: &ReceiptEnvelope) -> String {
             .map(|l| format!(" ({})", l.path))
             .unwrap_or_default();
 
-        out.push_str(&format!("- **{}** `{}`{} — {}\n", sev, f.code, loc, f.message));
+        out.push_str(&format!(
+            "- **{}** `{}`{} — {}\n",
+            sev, f.code, loc, f.message
+        ));
         if let Some(help) = &f.help {
-            out.push_str(&format!("  - {}
-", help));
+            out.push_str(&format!(
+                "  - {}
+",
+                help
+            ));
         }
     }
 
