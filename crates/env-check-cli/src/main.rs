@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
@@ -208,7 +208,8 @@ fn main() -> anyhow::Result<()> {
             let debug_log_path = if let Some(path) = log_file {
                 Some(path)
             } else if debug {
-                Some(PathBuf::from("artifacts/env-check/extras/raw.log"))
+                let receipt_parent = out.parent().unwrap_or(Path::new("."));
+                Some(receipt_parent.join("extras").join("raw.log"))
             } else {
                 None
             };
@@ -226,21 +227,21 @@ fn main() -> anyhow::Result<()> {
             {
                 Ok(mut output) => {
                     // If a debug log was written, add an artifact pointer to the receipt.
+                    // Only safe relative paths are included; absolute/traversal paths are omitted.
                     if let Some(ref log_path) = debug_log_path {
                         if log_path.exists() {
-                            let rel = if let Some(receipt_parent) = out.parent() {
-                                log_path
-                                    .strip_prefix(receipt_parent)
-                                    .map(|p| p.to_string_lossy().replace('\\', "/"))
-                                    .unwrap_or_else(|_| log_path.display().to_string().replace('\\', "/"))
-                            } else {
-                                log_path.display().to_string().replace('\\', "/")
-                            };
-                            output.receipt.artifacts.push(ArtifactRef {
-                                path: rel,
-                                kind: "debug_log".to_string(),
-                                description: Some("Probe debug transcript".to_string()),
-                            });
+                            if let Some(receipt_parent) = out.parent() {
+                                if let Ok(rel) = log_path.strip_prefix(receipt_parent) {
+                                    let artifact = ArtifactRef {
+                                        path: rel.to_string_lossy().replace('\\', "/"),
+                                        kind: "debug_log".to_string(),
+                                        description: Some("Probe debug transcript".to_string()),
+                                    };
+                                    if artifact.is_safe() {
+                                        output.receipt.artifacts.push(artifact);
+                                    }
+                                }
+                            }
                         }
                     }
 

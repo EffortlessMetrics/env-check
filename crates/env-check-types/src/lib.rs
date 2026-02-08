@@ -193,6 +193,41 @@ pub struct ArtifactRef {
     pub description: Option<String>,
 }
 
+impl ArtifactRef {
+    /// Returns `true` if the artifact path is safe to embed in a receipt.
+    ///
+    /// A safe path is:
+    /// - Not empty
+    /// - Not absolute (no leading `/`, no Windows drive letter like `C:/`)
+    /// - Forward-slash only (no backslashes)
+    /// - No `..` traversal components
+    pub fn is_safe(&self) -> bool {
+        let p = &self.path;
+        if p.is_empty() {
+            return false;
+        }
+        // No backslashes
+        if p.contains('\\') {
+            return false;
+        }
+        // No absolute unix paths
+        if p.starts_with('/') {
+            return false;
+        }
+        // No Windows drive letters (e.g. C:/ or D:\)
+        if p.len() >= 2 && p.as_bytes()[1] == b':' && p.as_bytes()[0].is_ascii_alphabetic() {
+            return false;
+        }
+        // No .. traversal components
+        for component in p.split('/') {
+            if component == ".." {
+                return false;
+            }
+        }
+        true
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ReceiptEnvelope {
     pub schema: String,
@@ -577,5 +612,79 @@ mod tests {
         }"#;
         let parsed: ReceiptEnvelope = serde_json::from_str(json).unwrap();
         assert!(parsed.artifacts.is_empty());
+    }
+
+    // =========================================================================
+    // ArtifactRef::is_safe() tests
+    // =========================================================================
+
+    #[test]
+    fn artifact_ref_is_safe_valid_relative_path() {
+        let a = ArtifactRef {
+            path: "extras/raw.log".to_string(),
+            kind: "debug_log".to_string(),
+            description: None,
+        };
+        assert!(a.is_safe());
+    }
+
+    #[test]
+    fn artifact_ref_is_safe_rejects_empty() {
+        let a = ArtifactRef {
+            path: "".to_string(),
+            kind: "debug_log".to_string(),
+            description: None,
+        };
+        assert!(!a.is_safe());
+    }
+
+    #[test]
+    fn artifact_ref_is_safe_rejects_absolute_unix() {
+        let a = ArtifactRef {
+            path: "/tmp/raw.log".to_string(),
+            kind: "debug_log".to_string(),
+            description: None,
+        };
+        assert!(!a.is_safe());
+    }
+
+    #[test]
+    fn artifact_ref_is_safe_rejects_absolute_windows() {
+        let a = ArtifactRef {
+            path: "C:/Users/raw.log".to_string(),
+            kind: "debug_log".to_string(),
+            description: None,
+        };
+        assert!(!a.is_safe());
+    }
+
+    #[test]
+    fn artifact_ref_is_safe_rejects_backslash() {
+        let a = ArtifactRef {
+            path: "extras\\raw.log".to_string(),
+            kind: "debug_log".to_string(),
+            description: None,
+        };
+        assert!(!a.is_safe());
+    }
+
+    #[test]
+    fn artifact_ref_is_safe_rejects_dotdot_at_start() {
+        let a = ArtifactRef {
+            path: "../secret/raw.log".to_string(),
+            kind: "debug_log".to_string(),
+            description: None,
+        };
+        assert!(!a.is_safe());
+    }
+
+    #[test]
+    fn artifact_ref_is_safe_rejects_dotdot_mid_path() {
+        let a = ArtifactRef {
+            path: "extras/../../../etc/passwd".to_string(),
+            kind: "debug_log".to_string(),
+            description: None,
+        };
+        assert!(!a.is_safe());
     }
 }
