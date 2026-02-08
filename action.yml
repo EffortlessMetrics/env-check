@@ -31,7 +31,7 @@ inputs:
   log_file:
     description: "Optional debug log path"
     required: false
-    default: "artifacts/env-check/raw.log"
+    default: "artifacts/env-check/extras/raw.log"
 
 runs:
   using: "composite"

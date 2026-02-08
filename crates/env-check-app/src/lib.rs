@@ -142,6 +142,7 @@ pub fn run_check_with_clock(
         },
         verdict: outcome.verdict.clone(),
         findings: outcome.findings.clone(),
+        artifacts: vec![],
         data: Some(data),
     };
 
@@ -397,6 +398,7 @@ pub fn runtime_error_receipt_with_clock(message: &str, clock: &dyn Clock) -> Rec
             fingerprint: None,
             data: None,
         }],
+        artifacts: vec![],
         data: None,
     }
 }

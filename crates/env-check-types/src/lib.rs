@@ -181,6 +181,18 @@ pub struct Finding {
     pub data: Option<serde_json::Value>,
 }
 
+/// A pointer to a depth artifact produced alongside the receipt.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ArtifactRef {
+    /// Relative path from the receipt file to the artifact.
+    pub path: String,
+    /// Machine-readable kind (e.g. `"debug_log"`).
+    pub kind: String,
+    /// Optional human description.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ReceiptEnvelope {
     pub schema: String,
@@ -189,6 +201,8 @@ pub struct ReceiptEnvelope {
     pub verdict: Verdict,
     #[serde(default)]
     pub findings: Vec<Finding>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub artifacts: Vec<ArtifactRef>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
 }
@@ -457,5 +471,111 @@ mod tests {
         let parsed: RunMeta = serde_json::from_str(json).unwrap();
 
         assert!(parsed.capabilities.is_none());
+    }
+
+    #[test]
+    fn artifact_ref_serialization_round_trip() {
+        let artifact = ArtifactRef {
+            path: "extras/raw.log".to_string(),
+            kind: "debug_log".to_string(),
+            description: Some("Probe debug transcript".to_string()),
+        };
+        let json = serde_json::to_string(&artifact).unwrap();
+        let parsed: ArtifactRef = serde_json::from_str(&json).unwrap();
+        assert_eq!(artifact, parsed);
+    }
+
+    #[test]
+    fn artifact_ref_omits_none_description() {
+        let artifact = ArtifactRef {
+            path: "extras/raw.log".to_string(),
+            kind: "debug_log".to_string(),
+            description: None,
+        };
+        let json = serde_json::to_string(&artifact).unwrap();
+        assert!(!json.contains("description"));
+    }
+
+    #[test]
+    fn receipt_envelope_omits_empty_artifacts() {
+        use chrono::TimeZone;
+        let receipt = ReceiptEnvelope {
+            schema: "sensor.report.v1".to_string(),
+            tool: ToolMeta {
+                name: "env-check".to_string(),
+                version: "0.1.0".to_string(),
+                commit: None,
+            },
+            run: RunMeta {
+                started_at: Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
+                ended_at: None,
+                duration_ms: None,
+                host: None,
+                ci: None,
+                git: None,
+                capabilities: None,
+            },
+            verdict: Verdict {
+                status: VerdictStatus::Pass,
+                counts: Counts::default(),
+                reasons: vec![],
+            },
+            findings: vec![],
+            artifacts: vec![],
+            data: None,
+        };
+        let json = serde_json::to_string(&receipt).unwrap();
+        assert!(!json.contains("artifacts"), "empty artifacts should be omitted");
+    }
+
+    #[test]
+    fn receipt_envelope_includes_nonempty_artifacts() {
+        use chrono::TimeZone;
+        let receipt = ReceiptEnvelope {
+            schema: "sensor.report.v1".to_string(),
+            tool: ToolMeta {
+                name: "env-check".to_string(),
+                version: "0.1.0".to_string(),
+                commit: None,
+            },
+            run: RunMeta {
+                started_at: Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
+                ended_at: None,
+                duration_ms: None,
+                host: None,
+                ci: None,
+                git: None,
+                capabilities: None,
+            },
+            verdict: Verdict {
+                status: VerdictStatus::Pass,
+                counts: Counts::default(),
+                reasons: vec![],
+            },
+            findings: vec![],
+            artifacts: vec![ArtifactRef {
+                path: "extras/raw.log".to_string(),
+                kind: "debug_log".to_string(),
+                description: Some("Probe debug transcript".to_string()),
+            }],
+            data: None,
+        };
+        let json = serde_json::to_string(&receipt).unwrap();
+        assert!(json.contains("artifacts"), "non-empty artifacts should be serialized");
+        assert!(json.contains("extras/raw.log"));
+    }
+
+    #[test]
+    fn receipt_envelope_without_artifacts_field_deserializes() {
+        // Backward compatibility: JSON without artifacts field should deserialize
+        let json = r#"{
+            "schema": "sensor.report.v1",
+            "tool": {"name": "env-check", "version": "0.1.0"},
+            "run": {"started_at": "2024-01-01T00:00:00Z"},
+            "verdict": {"status": "pass", "counts": {"info": 0, "warn": 0, "error": 0}},
+            "findings": []
+        }"#;
+        let parsed: ReceiptEnvelope = serde_json::from_str(json).unwrap();
+        assert!(parsed.artifacts.is_empty());
     }
 }

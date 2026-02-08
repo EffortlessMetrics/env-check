@@ -44,9 +44,9 @@ If none exist, env-check emits a **skip** receipt (it does not fail a random rep
 Canonical output paths:
 
 ```
-artifacts/env-check/report.json    # required (receipt envelope)
-artifacts/env-check/comment.md     # optional (PR-friendly summary)
-artifacts/env-check/raw.log        # optional (probe transcript)
+artifacts/env-check/report.json        # required (receipt envelope)
+artifacts/env-check/comment.md         # optional (PR-friendly summary)
+artifacts/env-check/extras/raw.log     # optional (probe transcript)
 ```
 
 ## Install

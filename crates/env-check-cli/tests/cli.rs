@@ -1161,7 +1161,7 @@ fn debug_flag_creates_raw_log() {
     cmd.assert().success();
 
     // Verify raw.log was created at default location
-    let log_path = artifacts_dir.join("raw.log");
+    let log_path = artifacts_dir.join("extras").join("raw.log");
     assert!(
         log_path.exists(),
         "raw.log should be created when --debug flag is used"
@@ -1223,7 +1223,7 @@ fn no_debug_flag_does_not_create_log() {
     cmd.assert().success();
 
     // Verify raw.log was NOT created
-    let log_path = artifacts_dir.join("raw.log");
+    let log_path = artifacts_dir.join("extras").join("raw.log");
     assert!(
         !log_path.exists(),
         "raw.log should NOT be created when --debug flag is not used"

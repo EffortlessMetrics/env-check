@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use env_check_app::{CheckOptions, run_check_with_options, write_atomic};
-use env_check_types::{FailOn, Profile, ReceiptEnvelope};
+use env_check_types::{ArtifactRef, FailOn, Profile, ReceiptEnvelope};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -51,7 +51,7 @@ enum Command {
         #[arg(long)]
         md: Option<PathBuf>,
 
-        /// Enable debug logging (writes to artifacts/env-check/raw.log by default).
+        /// Enable debug logging (writes to artifacts/env-check/extras/raw.log by default).
         /// This is a side artifact that does NOT affect receipt determinism.
         #[arg(long)]
         debug: bool,
@@ -208,12 +208,12 @@ fn main() -> anyhow::Result<()> {
             let debug_log_path = if let Some(path) = log_file {
                 Some(path)
             } else if debug {
-                Some(PathBuf::from("artifacts/env-check/raw.log"))
+                Some(PathBuf::from("artifacts/env-check/extras/raw.log"))
             } else {
                 None
             };
 
-            let options = CheckOptions { debug_log_path };
+            let options = CheckOptions { debug_log_path: debug_log_path.clone() };
 
             match run_check_with_options(
                 &root,
@@ -224,7 +224,26 @@ fn main() -> anyhow::Result<()> {
             )
             .with_context(|| "run env-check")
             {
-                Ok(output) => {
+                Ok(mut output) => {
+                    // If a debug log was written, add an artifact pointer to the receipt.
+                    if let Some(ref log_path) = debug_log_path {
+                        if log_path.exists() {
+                            let rel = if let Some(receipt_parent) = out.parent() {
+                                log_path
+                                    .strip_prefix(receipt_parent)
+                                    .map(|p| p.to_string_lossy().replace('\\', "/"))
+                                    .unwrap_or_else(|_| log_path.display().to_string().replace('\\', "/"))
+                            } else {
+                                log_path.display().to_string().replace('\\', "/")
+                            };
+                            output.receipt.artifacts.push(ArtifactRef {
+                                path: rel,
+                                kind: "debug_log".to_string(),
+                                description: Some("Probe debug transcript".to_string()),
+                            });
+                        }
+                    }
+
                     let json = serde_json::to_vec_pretty(&output.receipt)?;
                     write_atomic(&out, &json)?;
 

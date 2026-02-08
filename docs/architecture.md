@@ -78,9 +78,9 @@ If none exist, env-check should emit a **skip** receipt with reason `no_sources`
 ### Canonical artifact layout
 
 ```
-artifacts/env-check/report.json   # canonical receipt (required)
-artifacts/env-check/comment.md    # optional markdown summary
-artifacts/env-check/raw.log       # optional probe transcript (debugging)
+artifacts/env-check/report.json        # canonical receipt (required)
+artifacts/env-check/comment.md         # optional markdown summary
+artifacts/env-check/extras/raw.log     # optional probe transcript (debugging)
 ```
 
 ### Receipt contract
@@ -146,4 +146,4 @@ env-check executes external commands as part of probing. Constraints:
 
 - Commands are fixed argv vectors (no shell parsing).
 - Probes are allowlisted by tool name (no “run arbitrary command from config” in v0.1).
-- The probe transcript (`raw.log`) should redact obvious secrets (future enhancement).
+- The probe transcript (`extras/raw.log`) should redact obvious secrets (future enhancement).
