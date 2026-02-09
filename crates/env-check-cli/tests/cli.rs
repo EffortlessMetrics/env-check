@@ -1472,7 +1472,7 @@ fn external_log_file_no_artifact_ref() {
     // But no artifact ref in the receipt (path is outside receipt parent)
     let content = fs::read_to_string(&out_path).unwrap();
     let json: Value = serde_json::from_str(&content).unwrap();
-    let has_artifacts = json.get("artifacts").and_then(|a| a.as_array()).map_or(true, |a| a.is_empty());
+    let has_artifacts = json.get("artifacts").and_then(|a| a.as_array()).is_none_or(|a| a.is_empty());
     assert!(has_artifacts, "receipt should have no artifact refs for external log paths");
 }
 

@@ -228,20 +228,18 @@ fn main() -> anyhow::Result<()> {
                 Ok(mut output) => {
                     // If a debug log was written, add an artifact pointer to the receipt.
                     // Only safe relative paths are included; absolute/traversal paths are omitted.
-                    if let Some(ref log_path) = debug_log_path {
-                        if log_path.exists() {
-                            if let Some(receipt_parent) = out.parent() {
-                                if let Ok(rel) = log_path.strip_prefix(receipt_parent) {
-                                    let artifact = ArtifactRef {
-                                        path: rel.to_string_lossy().replace('\\', "/"),
-                                        kind: "debug_log".to_string(),
-                                        description: Some("Probe debug transcript".to_string()),
-                                    };
-                                    if artifact.is_safe() {
-                                        output.receipt.artifacts.push(artifact);
-                                    }
-                                }
-                            }
+                    if let Some(ref log_path) = debug_log_path
+                        && log_path.exists()
+                        && let Some(receipt_parent) = out.parent()
+                        && let Ok(rel) = log_path.strip_prefix(receipt_parent)
+                    {
+                        let artifact = ArtifactRef {
+                            path: rel.to_string_lossy().replace('\\', "/"),
+                            kind: "debug_log".to_string(),
+                            description: Some("Probe debug transcript".to_string()),
+                        };
+                        if artifact.is_safe() {
+                            output.receipt.artifacts.push(artifact);
                         }
                     }
 

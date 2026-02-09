@@ -696,7 +696,7 @@ mod tests {
 
     #[test]
     fn finding_sort_key_orders_by_severity_and_path() {
-        let mut findings = vec![
+        let mut findings = [
             Finding {
                 severity: Severity::Info,
                 check_id: Some("b".into()),
@@ -755,7 +755,7 @@ mod tests {
             },
         ];
 
-        findings.sort_by(|a, b| finding_sort_key(a).cmp(&finding_sort_key(b)));
+        findings.sort_by_key(finding_sort_key);
 
         assert_eq!(findings[0].severity, Severity::Error);
         assert_eq!(findings[1].severity, Severity::Warn);

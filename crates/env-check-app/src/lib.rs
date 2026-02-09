@@ -657,6 +657,7 @@ fn detect_git(root: &Path) -> Option<GitMeta> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use env_check_types::{ProbeKind, SourceRef};
 
     /// Get the path to a test fixture file.
     fn fixture_path(name: &str) -> String {
