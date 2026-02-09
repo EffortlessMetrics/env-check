@@ -2,10 +2,10 @@ use std::path::Path;
 
 use env_check_sources::{
     parse_all, parse_go_mod, parse_go_mod_str, parse_hash_manifest, parse_mise_toml,
-    parse_mise_toml_str, parse_node_version, parse_node_version_str, parse_nvmrc, parse_nvmrc_str,
-    parse_package_json, parse_package_json_str, parse_pyproject_toml, parse_pyproject_toml_str,
-    parse_python_version, parse_python_version_str, parse_rust_toolchain, parse_tool_versions,
-    parse_tool_versions_str,
+    parse_hash_manifest_str, parse_mise_toml_str, parse_node_version, parse_node_version_str,
+    parse_nvmrc, parse_nvmrc_str, parse_package_json, parse_package_json_str, parse_pyproject_toml,
+    parse_pyproject_toml_str, parse_python_version, parse_python_version_str, parse_rust_toolchain,
+    parse_tool_versions, parse_tool_versions_str,
 };
 use env_check_types::{ProbeKind, SourceKind};
 
@@ -403,6 +403,36 @@ fn hash_manifest_tool_name_is_file_prefixed() {
     let reqs = parse_hash_manifest(root, &path).unwrap();
     assert!(reqs[0].tool.starts_with("file:"));
     assert_eq!(reqs[0].tool, "file:scripts/mytool.sh");
+}
+
+#[test]
+fn hash_manifest_rejects_absolute_unix_path() {
+    let root = Path::new("/fake");
+    let path = root.join("tools.sha256");
+    let result = parse_hash_manifest_str(root, &path, "abc123 /etc/passwd");
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(err_msg.contains("repo-relative"));
+}
+
+#[test]
+fn hash_manifest_rejects_windows_path() {
+    let root = Path::new("/fake");
+    let path = root.join("tools.sha256");
+    let result = parse_hash_manifest_str(root, &path, "abc123 C:\\tools\\bin.exe");
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(err_msg.contains("repo-relative"));
+}
+
+#[test]
+fn hash_manifest_missing_path_is_error() {
+    let root = Path::new("/fake");
+    let path = root.join("tools.sha256");
+    let result = parse_hash_manifest_str(root, &path, "abc123");
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(err_msg.contains("missing path"));
 }
 
 // =============================================================================

@@ -687,4 +687,83 @@ mod tests {
         };
         assert!(!a.is_safe());
     }
+
+    #[test]
+    fn severity_rank_orders_correctly() {
+        assert!(Severity::Error.rank() > Severity::Warn.rank());
+        assert!(Severity::Warn.rank() > Severity::Info.rank());
+    }
+
+    #[test]
+    fn finding_sort_key_orders_by_severity_and_path() {
+        let mut findings = vec![
+            Finding {
+                severity: Severity::Info,
+                check_id: Some("b".into()),
+                code: "code_b".into(),
+                message: "msg_b".into(),
+                location: Some(Location {
+                    path: "b.txt".into(),
+                    line: None,
+                    col: None,
+                }),
+                help: None,
+                url: None,
+                fingerprint: None,
+                data: None,
+            },
+            Finding {
+                severity: Severity::Error,
+                check_id: Some("a".into()),
+                code: "code_a".into(),
+                message: "msg_a".into(),
+                location: Some(Location {
+                    path: "a.txt".into(),
+                    line: None,
+                    col: None,
+                }),
+                help: None,
+                url: None,
+                fingerprint: None,
+                data: None,
+            },
+            Finding {
+                severity: Severity::Warn,
+                check_id: Some("c".into()),
+                code: "code_c".into(),
+                message: "msg_c".into(),
+                location: None, // empty path should sort before "z.txt" if same severity
+                help: None,
+                url: None,
+                fingerprint: None,
+                data: None,
+            },
+            Finding {
+                severity: Severity::Warn,
+                check_id: Some("d".into()),
+                code: "code_d".into(),
+                message: "msg_d".into(),
+                location: Some(Location {
+                    path: "z.txt".into(),
+                    line: None,
+                    col: None,
+                }),
+                help: None,
+                url: None,
+                fingerprint: None,
+                data: None,
+            },
+        ];
+
+        findings.sort_by(|a, b| finding_sort_key(a).cmp(&finding_sort_key(b)));
+
+        assert_eq!(findings[0].severity, Severity::Error);
+        assert_eq!(findings[1].severity, Severity::Warn);
+        assert_eq!(findings[2].severity, Severity::Warn);
+        assert_eq!(findings[3].severity, Severity::Info);
+
+        // For equal severity (warn), empty path sorts before "z.txt"
+        assert!(findings[1].location.is_none());
+        assert_eq!(findings[2].location.as_ref().unwrap().path, "z.txt");
+    }
 }

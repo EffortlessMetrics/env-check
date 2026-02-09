@@ -333,3 +333,53 @@ fn explain(code: &str) -> &'static str {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_mode_accepts_valid_values() {
+        assert_eq!(parse_mode("default").unwrap(), OutputMode::Default);
+        assert_eq!(parse_mode("cockpit").unwrap(), OutputMode::Cockpit);
+    }
+
+    #[test]
+    fn parse_mode_rejects_invalid_value() {
+        let err = parse_mode("nope").unwrap_err();
+        assert!(err.contains("invalid mode"));
+    }
+
+    #[test]
+    fn profile_arg_parses_valid_values() {
+        assert!(matches!("oss".parse::<ProfileArg>(), Ok(ProfileArg::Oss)));
+        assert!(matches!("team".parse::<ProfileArg>(), Ok(ProfileArg::Team)));
+        assert!(matches!("strict".parse::<ProfileArg>(), Ok(ProfileArg::Strict)));
+    }
+
+    #[test]
+    fn profile_arg_rejects_invalid_value() {
+        let err = "invalid".parse::<ProfileArg>().unwrap_err();
+        assert!(err.contains("invalid profile"));
+    }
+
+    #[test]
+    fn fail_on_arg_parses_valid_values() {
+        assert!(matches!("error".parse::<FailOnArg>(), Ok(FailOnArg::Error)));
+        assert!(matches!("warn".parse::<FailOnArg>(), Ok(FailOnArg::Warn)));
+        assert!(matches!("never".parse::<FailOnArg>(), Ok(FailOnArg::Never)));
+    }
+
+    #[test]
+    fn fail_on_arg_rejects_invalid_value() {
+        let err = "invalid".parse::<FailOnArg>().unwrap_err();
+        assert!(err.contains("invalid fail_on"));
+    }
+
+    #[test]
+    fn explain_returns_known_and_unknown_messages() {
+        assert!(explain("env.missing_tool").contains("PATH"));
+        assert!(explain("tool.runtime_error").contains("execute"));
+        assert!(explain("unknown.code").contains("Unknown code"));
+    }
+}

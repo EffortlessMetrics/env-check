@@ -464,6 +464,57 @@ fn exit_code_zero_for_skip_status() {
     assert_eq!(json["verdict"]["status"].as_str().unwrap(), "skip");
 }
 
+#[test]
+fn cockpit_mode_exits_zero_on_fail() {
+    let tmp = tempdir().unwrap();
+    let out_path = tmp.path().join("report.json");
+
+    let mut cmd = env_check_cmd();
+    cmd.arg("check")
+        .arg("--root")
+        .arg(fixtures_dir().join("missing_tool"))
+        .arg("--profile")
+        .arg("team")
+        .arg("--out")
+        .arg(&out_path)
+        .arg("--mode")
+        .arg("cockpit");
+
+    cmd.assert().code(0);
+
+    let content = fs::read_to_string(&out_path).unwrap();
+    let json: Value = serde_json::from_str(&content).unwrap();
+    assert_eq!(json["verdict"]["status"].as_str().unwrap(), "fail");
+}
+
+#[test]
+fn cockpit_mode_exits_zero_on_runtime_error() {
+    let tmp = tempdir().unwrap();
+    let out_path = tmp.path().join("report.json");
+    let bad_config = tmp.path().join("bad.toml");
+
+    fs::write(&bad_config, "not = [toml").unwrap();
+
+    let mut cmd = env_check_cmd();
+    cmd.arg("check")
+        .arg("--root")
+        .arg(fixtures_dir().join("no_sources"))
+        .arg("--config")
+        .arg(&bad_config)
+        .arg("--out")
+        .arg(&out_path)
+        .arg("--mode")
+        .arg("cockpit");
+
+    cmd.assert().code(0);
+
+    let content = fs::read_to_string(&out_path).unwrap();
+    let json: Value = serde_json::from_str(&content).unwrap();
+    assert_eq!(json["verdict"]["status"].as_str().unwrap(), "fail");
+    let reasons = json["verdict"]["reasons"].as_array().unwrap();
+    assert!(reasons.iter().any(|r| r.as_str() == Some("tool_error")));
+}
+
 // =============================================================================
 // OUTPUT FILE TESTS
 // =============================================================================
