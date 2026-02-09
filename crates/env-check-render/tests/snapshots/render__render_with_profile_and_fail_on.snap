@@ -1,0 +1,12 @@
+---
+source: crates/env-check-render/tests/render.rs
+expression: md
+---
+## env-check: PASS
+
+- Findings: 0 error, 0 warn, 0 info
+- Profile: `strict`
+- fail_on: `warn`
+- Sources: `.tool-versions`
+
+_No findings._

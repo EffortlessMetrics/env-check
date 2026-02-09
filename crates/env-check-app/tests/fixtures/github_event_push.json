@@ -1,0 +1,11 @@
+{
+  "ref": "refs/heads/main",
+  "before": "abc123def456789012345678901234567890abcd",
+  "after": "def456abc789012345678901234567890abcdef12",
+  "pusher": {
+    "name": "user"
+  },
+  "repository": {
+    "full_name": "owner/repo"
+  }
+}

@@ -1,0 +1,15 @@
+---
+source: crates/env-check-render/tests/render.rs
+expression: md
+---
+## env-check: WARN
+
+- Findings: 0 error, 2 warn, 0 info
+- Profile: `oss`
+- Sources: `.tool-versions`
+
+### Findings
+
+- **warn** `env.version_mismatch` — Global node version does not match project requirements
+  - Check your global node version
+- **warn** `tool.runtime_error` — Failed to determine python version

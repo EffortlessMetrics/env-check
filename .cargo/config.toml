@@ -1,0 +1,6 @@
+# Cargo configuration for env-check workspace
+
+[alias]
+# Run env-check via `cargo env-check` shorthand
+# Example: cargo env-check check --profile team
+env-check = "run -p env-check-cli --"

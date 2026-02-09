@@ -1,0 +1,13 @@
+---
+source: crates/env-check-render/tests/render.rs
+expression: render_markdown(&receipt_oss)
+---
+## env-check: WARN
+
+- Findings: 0 error, 1 warn, 0 info
+- Profile: `oss`
+- Sources: `.tool-versions`
+
+### Findings
+
+- **warn** `env.version_mismatch` (.tool-versions) — Version mismatch

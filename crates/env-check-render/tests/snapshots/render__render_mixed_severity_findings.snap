@@ -1,0 +1,22 @@
+---
+source: crates/env-check-render/tests/render.rs
+expression: md
+---
+## env-check: FAIL
+
+- Findings: 2 error, 2 warn, 2 info
+- Profile: `team`
+- fail_on: `error`
+- Sources: `rust-toolchain.toml`, `.tool-versions`, `.mise.toml`
+
+### Findings
+
+- **error** `env.missing_tool` (rust-toolchain.toml) — rustc is not on PATH
+  - Install rustup
+- **error** `env.toolchain_missing` (rust-toolchain.toml) — Rust toolchain 1.75.0 not installed
+  - Run: rustup toolchain install 1.75.0
+- **warn** `env.hash_mismatch` (.env.example) — Config file hash does not match manifest
+  - Regenerate config file
+- **warn** `env.version_mismatch` (.tool-versions) — node version mismatch: want 20.x, have 18.17.0
+- **info** `env.info` (.mise.toml) — python 3.12.1 verified
+- **info** `env.info` (.mise.toml) — go 1.21.5 verified

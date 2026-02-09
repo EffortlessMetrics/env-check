@@ -1,0 +1,2 @@
+# Hash manifest with an entry that will fail (wrong hash for existing file)
+0000000000000000000000000000000000000000000000000000000000000000  scripts/test-binary.sh

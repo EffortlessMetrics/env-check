@@ -1,0 +1,17 @@
+---
+source: crates/env-check-render/tests/render.rs
+expression: md
+---
+## env-check: WARN
+
+- Findings: 0 error, 3 warn, 0 info
+- Profile: `oss`
+- Sources: `.tool-versions`, `.mise.toml`
+
+### Findings
+
+- **warn** `env.version_mismatch` (.tool-versions) — node: expected 20.x, found 18.17.0
+  - Update node version
+- **warn** `env.version_mismatch` (.tool-versions) — python: expected 3.12, found 3.11.4
+  - Update python version
+- **warn** `env.version_mismatch` (.mise.toml) — go: expected 1.21, found 1.20.5

@@ -1,0 +1,15 @@
+---
+source: crates/env-check-render/tests/render.rs
+expression: md
+---
+## env-check: FAIL
+
+- Findings: 1 error, 0 warn, 0 info
+- Profile: `team`
+- fail_on: `error`
+- Sources: `.tool-versions`
+
+### Findings
+
+- **error** `env.configuration_conflict` (.tool-versions) — This is a very long error message that spans multiple words and describes a complex issue with the environment configuration that might occur when multiple tools are misconfigured or when there are conflicts between different version managers like asdf, mise, and manual installations that can cause confusion for developers trying to set up their local environment
+  - To fix this issue, you need to: 1) First check your PATH variable, 2) Verify that all version managers are configured correctly, 3) Ensure there are no conflicting installations, 4) Run the appropriate installation commands for each tool, 5) Restart your shell session to pick up the changes

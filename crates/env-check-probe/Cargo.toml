@@ -4,14 +4,23 @@ version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Probe machine for tool presence, versions, and file hashes"
+readme = "../../README.md"
 
 [dependencies]
-env-check-types = { path = "../env-check-types" }
+env-check-types.workspace = true
 anyhow.workspace = true
 regex.workspace = true
 which.workspace = true
 sha2.workspace = true
 hex.workspace = true
+chrono.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+tempfile.workspace = true

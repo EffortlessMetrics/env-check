@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 pub const TOOL_NAME: &str = "env-check";
-pub const SCHEMA_ID: &str = "env-check.report.v1";
+pub const SCHEMA_ID: &str = "sensor.report.v1";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -51,6 +51,40 @@ pub struct ToolMeta {
     pub commit: Option<String>,
 }
 
+/// Status of a single sensor capability.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CapabilityStatus {
+    Available,
+    Unavailable,
+    Skipped,
+}
+
+/// A single capability entry with status and optional reason.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CapabilityEntry {
+    pub status: CapabilityStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// Declares what the sensor actually checked ("No Green By Omission").
+///
+/// This allows downstream consumers to distinguish between:
+/// - "We checked for X and found nothing wrong" (capability available, no findings)
+/// - "We didn't check for X at all" (capability unavailable/skipped)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Capabilities {
+    /// Whether git metadata was detected and used.
+    pub git: CapabilityEntry,
+    /// Whether baseline comparison was performed.
+    pub baseline: CapabilityEntry,
+    /// Whether input source files were discovered and parsed.
+    pub inputs: CapabilityEntry,
+    /// Whether the probe engine ran checks.
+    pub engine: CapabilityEntry,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RunMeta {
     pub started_at: DateTime<Utc>,
@@ -64,6 +98,8 @@ pub struct RunMeta {
     pub ci: Option<CiMeta>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub git: Option<GitMeta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<Capabilities>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -81,6 +117,14 @@ pub struct CiMeta {
     pub job: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub run_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repository: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub git_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sha: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -97,6 +141,8 @@ pub struct GitMeta {
     pub head_sha: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub merge_base: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pr_number: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -170,13 +216,19 @@ pub enum SourceKind {
     MiseToml,
     RustToolchain,
     HashManifest,
+    NodeVersion,
+    Nvmrc,
+    PackageJson,
+    PythonVersion,
+    PyprojectToml,
+    GoMod,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProbeKind {
-    PathTool,         // `<tool> --version`
-    RustupToolchain,  // `rustup toolchain list` + rust-toolchain
-    FileHash,         // sha256 on repo-local file
+    PathTool,        // `<tool> --version`
+    RustupToolchain, // `rustup toolchain list` + rust-toolchain
+    FileHash,        // sha256 on repo-local file
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -279,9 +331,131 @@ pub mod checks {
 }
 
 /// Sorting key used to ensure deterministic findings order.
-pub fn finding_sort_key(f: &Finding) -> (u8, String, String, String, String) {
-    let sev = f.severity.rank();
-    let path = f.location.as_ref().map(|l| l.path.clone()).unwrap_or_default();
+pub fn finding_sort_key(f: &Finding) -> (std::cmp::Reverse<u8>, String, String, String, String) {
+    let sev = std::cmp::Reverse(f.severity.rank());
+    let path = f
+        .location
+        .as_ref()
+        .map(|l| l.path.clone())
+        .unwrap_or_default();
     let check_id = f.check_id.clone().unwrap_or_default();
     (sev, path, check_id, f.code.clone(), f.message.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn capability_status_serializes_to_snake_case() {
+        let json = serde_json::to_string(&CapabilityStatus::Available).unwrap();
+        assert_eq!(json, "\"available\"");
+        let json = serde_json::to_string(&CapabilityStatus::Unavailable).unwrap();
+        assert_eq!(json, "\"unavailable\"");
+        let json = serde_json::to_string(&CapabilityStatus::Skipped).unwrap();
+        assert_eq!(json, "\"skipped\"");
+    }
+
+    #[test]
+    fn capability_entry_serialization_round_trip() {
+        let entry = CapabilityEntry {
+            status: CapabilityStatus::Available,
+            reason: None,
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        let parsed: CapabilityEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(entry, parsed);
+        // reason=None should be omitted
+        assert!(!json.contains("reason"));
+    }
+
+    #[test]
+    fn capability_entry_with_reason() {
+        let entry = CapabilityEntry {
+            status: CapabilityStatus::Unavailable,
+            reason: Some("no git repository detected".into()),
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["status"], "unavailable");
+        assert_eq!(value["reason"], "no git repository detected");
+    }
+
+    #[test]
+    fn capabilities_serialization_round_trip() {
+        let caps = Capabilities {
+            git: CapabilityEntry {
+                status: CapabilityStatus::Available,
+                reason: None,
+            },
+            baseline: CapabilityEntry {
+                status: CapabilityStatus::Skipped,
+                reason: Some("env-check does not use baseline comparison".into()),
+            },
+            inputs: CapabilityEntry {
+                status: CapabilityStatus::Available,
+                reason: None,
+            },
+            engine: CapabilityEntry {
+                status: CapabilityStatus::Available,
+                reason: None,
+            },
+        };
+
+        let json = serde_json::to_string(&caps).unwrap();
+        let parsed: Capabilities = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(caps, parsed);
+    }
+
+    #[test]
+    fn run_meta_with_capabilities() {
+        use chrono::TimeZone;
+
+        let run = RunMeta {
+            started_at: Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
+            ended_at: None,
+            duration_ms: None,
+            host: None,
+            ci: None,
+            git: None,
+            capabilities: Some(Capabilities {
+                git: CapabilityEntry {
+                    status: CapabilityStatus::Available,
+                    reason: None,
+                },
+                baseline: CapabilityEntry {
+                    status: CapabilityStatus::Skipped,
+                    reason: Some("not supported".into()),
+                },
+                inputs: CapabilityEntry {
+                    status: CapabilityStatus::Available,
+                    reason: None,
+                },
+                engine: CapabilityEntry {
+                    status: CapabilityStatus::Available,
+                    reason: None,
+                },
+            }),
+        };
+
+        let json = serde_json::to_string(&run).unwrap();
+        let parsed: RunMeta = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(run, parsed);
+        assert!(parsed.capabilities.is_some());
+        assert_eq!(
+            parsed.capabilities.as_ref().unwrap().git.status,
+            CapabilityStatus::Available
+        );
+    }
+
+    #[test]
+    fn run_meta_without_capabilities_backward_compatible() {
+        // JSON without capabilities field should deserialize successfully
+        let json = r#"{"started_at":"2024-01-01T00:00:00Z"}"#;
+        let parsed: RunMeta = serde_json::from_str(json).unwrap();
+
+        assert!(parsed.capabilities.is_none());
+    }
 }

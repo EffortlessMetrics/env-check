@@ -1,0 +1,16 @@
+---
+source: crates/env-check-render/tests/render.rs
+expression: md
+---
+## env-check: FAIL
+
+- Findings: 3 error, 10 warn, 5 info
+- Profile: `team`
+- Sources: `rust-toolchain.toml`, `.tool-versions`
+- Note: output truncated; see `report.json` for full details.
+
+### Findings
+
+- **error** `env.missing_tool` (rust-toolchain.toml) — cargo not found
+- **error** `env.missing_tool` (rust-toolchain.toml) — rustc not found
+- **warn** `env.version_mismatch` (.tool-versions) — node mismatch

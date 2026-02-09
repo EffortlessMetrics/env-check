@@ -4,14 +4,14 @@
   "title": "env-check.report.v1",
   "allOf": [
     {
-      "$ref": "./receipt.envelope.v1.json"
+      "$ref": "./sensor.report.v1.schema.json"
     },
     {
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "schema": {
-          "const": "env-check.report.v1"
+          "const": "sensor.report.v1"
         },
         "tool": {
           "type": "object",
@@ -100,6 +100,14 @@
             "truncated": {
               "type": "boolean",
               "default": false
+            },
+            "observed": {
+              "type": "object",
+              "properties": {
+                "source_kinds": { "type": "array", "items": { "type": "string" } },
+                "probe_kinds": { "type": "array", "items": { "type": "string" } }
+              },
+              "additionalProperties": false
             }
           }
         }

@@ -1,11 +1,24 @@
 //! Parse repo sources into normalized Requirements.
 
+pub mod go_mod;
+pub mod node;
+pub mod python;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use env_check_types::{
-    checks, codes, Finding, Location, ProbeKind, Requirement, Severity, SourceKind, SourceRef,
+    Finding, Location, ProbeKind, Requirement, Severity, SourceKind, SourceRef, checks, codes,
+};
+
+pub use go_mod::{parse_go_mod, parse_go_mod_str};
+pub use node::{
+    parse_node_version, parse_node_version_str, parse_nvmrc, parse_nvmrc_str, parse_package_json,
+    parse_package_json_str,
+};
+pub use python::{
+    parse_pyproject_toml, parse_pyproject_toml_str, parse_python_version, parse_python_version_str,
 };
 
 #[derive(Debug, Clone)]
@@ -35,6 +48,12 @@ pub fn parse_all(root: &Path, hash_manifests: &[PathBuf]) -> ParsedSources {
         (SourceKind::RustToolchain, root.join("rust-toolchain")),
         (SourceKind::MiseToml, root.join(".mise.toml")),
         (SourceKind::ToolVersions, root.join(".tool-versions")),
+        (SourceKind::NodeVersion, root.join(".node-version")),
+        (SourceKind::Nvmrc, root.join(".nvmrc")),
+        (SourceKind::PackageJson, root.join("package.json")),
+        (SourceKind::PythonVersion, root.join(".python-version")),
+        (SourceKind::PyprojectToml, root.join("pyproject.toml")),
+        (SourceKind::GoMod, root.join("go.mod")),
     ];
 
     for (kind, path) in candidates {
@@ -53,6 +72,30 @@ pub fn parse_all(root: &Path, hash_manifests: &[PathBuf]) -> ParsedSources {
                     Err(e) => out.findings.push(parse_error_finding(root, &path, e)),
                 },
                 SourceKind::RustToolchain => match parse_rust_toolchain(root, &path) {
+                    Ok(reqs) => out.requirements.extend(reqs),
+                    Err(e) => out.findings.push(parse_error_finding(root, &path, e)),
+                },
+                SourceKind::NodeVersion => match node::parse_node_version(root, &path) {
+                    Ok(reqs) => out.requirements.extend(reqs),
+                    Err(e) => out.findings.push(parse_error_finding(root, &path, e)),
+                },
+                SourceKind::Nvmrc => match node::parse_nvmrc(root, &path) {
+                    Ok(reqs) => out.requirements.extend(reqs),
+                    Err(e) => out.findings.push(parse_error_finding(root, &path, e)),
+                },
+                SourceKind::PackageJson => match node::parse_package_json(root, &path) {
+                    Ok(reqs) => out.requirements.extend(reqs),
+                    Err(e) => out.findings.push(parse_error_finding(root, &path, e)),
+                },
+                SourceKind::PythonVersion => match python::parse_python_version(root, &path) {
+                    Ok(reqs) => out.requirements.extend(reqs),
+                    Err(e) => out.findings.push(parse_error_finding(root, &path, e)),
+                },
+                SourceKind::PyprojectToml => match python::parse_pyproject_toml(root, &path) {
+                    Ok(reqs) => out.requirements.extend(reqs),
+                    Err(e) => out.findings.push(parse_error_finding(root, &path, e)),
+                },
+                SourceKind::GoMod => match go_mod::parse_go_mod(root, &path) {
                     Ok(reqs) => out.requirements.extend(reqs),
                     Err(e) => out.findings.push(parse_error_finding(root, &path, e)),
                 },
@@ -77,7 +120,8 @@ pub fn parse_all(root: &Path, hash_manifests: &[PathBuf]) -> ParsedSources {
     }
 
     // Normalize ordering for determinism.
-    out.requirements.sort_by(|a, b| a.tool.cmp(&b.tool).then(a.source.path.cmp(&b.source.path)));
+    out.requirements
+        .sort_by(|a, b| a.tool.cmp(&b.tool).then(a.source.path.cmp(&b.source.path)));
 
     out
 }
@@ -106,7 +150,11 @@ pub fn parse_tool_versions(root: &Path, path: &Path) -> anyhow::Result<Vec<Requi
     parse_tool_versions_str(root, path, &text)
 }
 
-pub fn parse_tool_versions_str(root: &Path, path: &Path, text: &str) -> anyhow::Result<Vec<Requirement>> {
+pub fn parse_tool_versions_str(
+    root: &Path,
+    path: &Path,
+    text: &str,
+) -> anyhow::Result<Vec<Requirement>> {
     let mut out = vec![];
 
     for (idx, line) in text.lines().enumerate() {
@@ -147,7 +195,11 @@ pub fn parse_mise_toml(root: &Path, path: &Path) -> anyhow::Result<Vec<Requireme
     parse_mise_toml_str(root, path, &text)
 }
 
-pub fn parse_mise_toml_str(root: &Path, path: &Path, text: &str) -> anyhow::Result<Vec<Requirement>> {
+pub fn parse_mise_toml_str(
+    root: &Path,
+    path: &Path,
+    text: &str,
+) -> anyhow::Result<Vec<Requirement>> {
     let value: toml::Value = toml::from_str(text).with_context(|| "parse toml")?;
 
     let tools = value
@@ -167,7 +219,7 @@ pub fn parse_mise_toml_str(root: &Path, path: &Path, text: &str) -> anyhow::Resu
             toml::Value::Integer(i) => Some(i.to_string()),
             toml::Value::Array(arr) => {
                 // Keep the first entry as the constraint, capture the full shape in data later.
-                arr.get(0).and_then(|x| x.as_str()).map(|s| s.to_string())
+                arr.first().and_then(|x| x.as_str()).map(|s| s.to_string())
             }
             _ => None,
         };
@@ -191,8 +243,17 @@ pub fn parse_mise_toml_str(root: &Path, path: &Path, text: &str) -> anyhow::Resu
 /// `rust-toolchain.toml` or legacy `rust-toolchain` file.
 pub fn parse_rust_toolchain(root: &Path, path: &Path) -> anyhow::Result<Vec<Requirement>> {
     let text = fs::read_to_string(path).with_context(|| "read rust toolchain")?;
+    parse_rust_toolchain_str(root, path, &text)
+}
 
-    if path.file_name().and_then(|n| n.to_str()) == Some("rust-toolchain") && !text.trim_start().starts_with('[') {
+pub fn parse_rust_toolchain_str(
+    root: &Path,
+    path: &Path,
+    text: &str,
+) -> anyhow::Result<Vec<Requirement>> {
+    if path.file_name().and_then(|n| n.to_str()) == Some("rust-toolchain")
+        && !text.trim_start().starts_with('[')
+    {
         // Legacy format: single string channel/version.
         let channel = text.trim().to_string();
         return Ok(vec![Requirement {
@@ -208,7 +269,7 @@ pub fn parse_rust_toolchain(root: &Path, path: &Path) -> anyhow::Result<Vec<Requ
         }]);
     }
 
-    let value: toml::Value = toml::from_str(&text).with_context(|| "parse rust-toolchain.toml")?;
+    let value: toml::Value = toml::from_str(text).with_context(|| "parse rust-toolchain.toml")?;
     let toolchain = value
         .get("toolchain")
         .ok_or_else(|| anyhow::anyhow!("missing [toolchain] table"))?;
@@ -234,6 +295,14 @@ pub fn parse_rust_toolchain(root: &Path, path: &Path) -> anyhow::Result<Vec<Requ
 /// Hash manifest format: `<sha256>  <path>`
 pub fn parse_hash_manifest(root: &Path, path: &Path) -> anyhow::Result<Vec<Requirement>> {
     let text = fs::read_to_string(path).with_context(|| "read hash manifest")?;
+    parse_hash_manifest_str(root, path, &text)
+}
+
+pub fn parse_hash_manifest_str(
+    root: &Path,
+    path: &Path,
+    text: &str,
+) -> anyhow::Result<Vec<Requirement>> {
     let mut out = vec![];
 
     for (idx, line) in text.lines().enumerate() {
@@ -253,7 +322,10 @@ pub fn parse_hash_manifest(root: &Path, path: &Path) -> anyhow::Result<Vec<Requi
 
         // Keep it repo-relative; don't allow absolute paths.
         if rel_path.starts_with('/') || rel_path.contains(':') {
-            return Err(anyhow::anyhow!("hash manifest path must be repo-relative: {}", rel_path));
+            return Err(anyhow::anyhow!(
+                "hash manifest path must be repo-relative: {}",
+                rel_path
+            ));
         }
 
         out.push(Requirement {
@@ -285,7 +357,7 @@ fn normalize_tool_id(raw: &str) -> String {
     .to_string()
 }
 
-fn rel(root: &Path, path: &Path) -> String {
+pub(crate) fn rel(root: &Path, path: &Path) -> String {
     path.strip_prefix(root)
         .unwrap_or(path)
         .to_string_lossy()

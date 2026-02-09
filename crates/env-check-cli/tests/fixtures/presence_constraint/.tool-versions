@@ -1,0 +1,2 @@
+# Presence-only constraints - these should pass presence check regardless of version
+fake-tool-with-latest latest

@@ -26,10 +26,16 @@ opt-in tool.
 
 env-check will attempt to read any of these if present:
 
-- `rust-toolchain.toml` / `rust-toolchain`
-- `.mise.toml`
 - `.tool-versions` (asdf)
-- `scripts/tools.sha256` (or other configured hash manifest)
+- `.mise.toml` (mise)
+- `rust-toolchain.toml` / `rust-toolchain`
+- `.node-version`
+- `.nvmrc`
+- `package.json` (engines field)
+- `.python-version`
+- `pyproject.toml`
+- `go.mod`
+- Hash manifest (`scripts/tools.sha256` or configured)
 
 If none exist, env-check emits a **skip** receipt (it does not fail a random repo).
 
@@ -41,6 +47,33 @@ Canonical output paths:
 artifacts/env-check/report.json    # required (receipt envelope)
 artifacts/env-check/comment.md     # optional (PR-friendly summary)
 artifacts/env-check/raw.log        # optional (probe transcript)
+```
+
+## Install
+
+### GitHub Releases (prebuilt binaries)
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/EffortlessMetrics/env-check/releases/latest/download/env-check-installer.sh \
+  | sh
+```
+
+PowerShell:
+
+```powershell
+irm https://github.com/EffortlessMetrics/env-check/releases/latest/download/env-check-installer.ps1 | iex
+```
+
+### GitHub Action (one-step adoption)
+
+```yaml
+- name: env-check
+  uses: EffortlessMetrics/env-check@v0.1.0
+  with:
+    profile: oss
+    root: .
+    md: artifacts/env-check/comment.md
 ```
 
 ## Quickstart
@@ -74,13 +107,19 @@ env-check explain env.missing_tool
 
 ## Contract compatibility
 
-env-check emits `env-check.report.v1`, which is an instance of the shared receipt envelope.
+env-check emits `sensor.report.v1`, which is an instance of the shared sensor report schema.
 Tool-specific details live under `data` only.
 
 See:
 
-- `schemas/receipt.envelope.v1.json`
+- `schemas/sensor.report.v1.schema.json`
 - `schemas/env-check.report.v1.json`
+
+## Final statement
+
+env-check is intentionally machine-truth and optional by default. It emits a standard receipt
+and minimal PR-friendly output, and it never runs builds, enforces repo policy, or modifies
+the repository.
 
 ## License
 
