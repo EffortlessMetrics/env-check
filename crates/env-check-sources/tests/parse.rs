@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use env_check_sources::{
-    parse_all, parse_go_mod, parse_go_mod_str, parse_hash_manifest, parse_mise_toml,
-    parse_hash_manifest_str, parse_mise_toml_str, parse_node_version, parse_node_version_str,
-    parse_nvmrc, parse_nvmrc_str, parse_package_json, parse_package_json_str, parse_pyproject_toml,
+    parse_all, parse_go_mod, parse_go_mod_str, parse_hash_manifest, parse_hash_manifest_str,
+    parse_mise_toml, parse_mise_toml_str, parse_node_version, parse_node_version_str, parse_nvmrc,
+    parse_nvmrc_str, parse_package_json, parse_package_json_str, parse_pyproject_toml,
     parse_pyproject_toml_str, parse_python_version, parse_python_version_str, parse_rust_toolchain,
     parse_tool_versions, parse_tool_versions_str,
 };
@@ -569,10 +569,12 @@ fn parse_all_hash_manifest_parse_error_emits_finding() {
         finding.location.as_ref().map(|l| l.path.as_str()),
         Some("scripts/tools.sha256")
     );
-    assert!(parsed
-        .sources_used
-        .iter()
-        .any(|s| s.path == "scripts/tools.sha256"));
+    assert!(
+        parsed
+            .sources_used
+            .iter()
+            .any(|s| s.path == "scripts/tools.sha256")
+    );
 }
 
 #[test]

@@ -214,7 +214,9 @@ fn main() -> anyhow::Result<()> {
                 None
             };
 
-            let options = CheckOptions { debug_log_path: debug_log_path.clone() };
+            let options = CheckOptions {
+                debug_log_path: debug_log_path.clone(),
+            };
 
             match run_check_with_options(
                 &root,
@@ -352,7 +354,10 @@ mod tests {
     fn profile_arg_parses_valid_values() {
         assert!(matches!("oss".parse::<ProfileArg>(), Ok(ProfileArg::Oss)));
         assert!(matches!("team".parse::<ProfileArg>(), Ok(ProfileArg::Team)));
-        assert!(matches!("strict".parse::<ProfileArg>(), Ok(ProfileArg::Strict)));
+        assert!(matches!(
+            "strict".parse::<ProfileArg>(),
+            Ok(ProfileArg::Strict)
+        ));
     }
 
     #[test]

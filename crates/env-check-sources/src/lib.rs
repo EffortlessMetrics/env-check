@@ -398,12 +398,7 @@ mod tests {
         let tools: Vec<String> = parsed.requirements.iter().map(|r| r.tool.clone()).collect();
         assert_eq!(
             tools,
-            vec![
-                "file:scripts/tool.sh",
-                "node",
-                "node",
-                "python",
-            ]
+            vec!["file:scripts/tool.sh", "node", "node", "python",]
         );
 
         let node_paths: Vec<String> = parsed

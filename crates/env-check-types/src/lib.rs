@@ -560,7 +560,10 @@ mod tests {
             data: None,
         };
         let json = serde_json::to_string(&receipt).unwrap();
-        assert!(!json.contains("artifacts"), "empty artifacts should be omitted");
+        assert!(
+            !json.contains("artifacts"),
+            "empty artifacts should be omitted"
+        );
     }
 
     #[test]
@@ -596,7 +599,10 @@ mod tests {
             data: None,
         };
         let json = serde_json::to_string(&receipt).unwrap();
-        assert!(json.contains("artifacts"), "non-empty artifacts should be serialized");
+        assert!(
+            json.contains("artifacts"),
+            "non-empty artifacts should be serialized"
+        );
         assert!(json.contains("extras/raw.log"));
     }
 
@@ -622,7 +628,10 @@ mod tests {
     fn severity_serializes_to_snake_case() {
         assert_eq!(serde_json::to_string(&Severity::Info).unwrap(), "\"info\"");
         assert_eq!(serde_json::to_string(&Severity::Warn).unwrap(), "\"warn\"");
-        assert_eq!(serde_json::to_string(&Severity::Error).unwrap(), "\"error\"");
+        assert_eq!(
+            serde_json::to_string(&Severity::Error).unwrap(),
+            "\"error\""
+        );
     }
 
     #[test]
@@ -649,7 +658,10 @@ mod tests {
     fn profile_and_fail_on_serialization() {
         assert_eq!(serde_json::to_string(&Profile::Oss).unwrap(), "\"oss\"");
         assert_eq!(serde_json::to_string(&Profile::Team).unwrap(), "\"team\"");
-        assert_eq!(serde_json::to_string(&Profile::Strict).unwrap(), "\"strict\"");
+        assert_eq!(
+            serde_json::to_string(&Profile::Strict).unwrap(),
+            "\"strict\""
+        );
         assert_eq!(serde_json::to_string(&FailOn::Error).unwrap(), "\"error\"");
         assert_eq!(serde_json::to_string(&FailOn::Warn).unwrap(), "\"warn\"");
         assert_eq!(serde_json::to_string(&FailOn::Never).unwrap(), "\"never\"");

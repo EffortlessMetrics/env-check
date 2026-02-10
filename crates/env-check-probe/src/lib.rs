@@ -635,10 +635,7 @@ mod tests {
 
         assert!(obs.present);
         assert!(obs.version.is_some());
-        assert!(obs
-            .probe
-            .stderr
-            .contains("runtime error"));
+        assert!(obs.probe.stderr.contains("runtime error"));
         assert_eq!(obs.probe.exit, None);
     }
 

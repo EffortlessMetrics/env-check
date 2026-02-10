@@ -1068,7 +1068,12 @@ mod tests {
         dir
     }
 
-    fn make_req(tool: &str, constraint: &str, required: bool, probe_kind: ProbeKind) -> Requirement {
+    fn make_req(
+        tool: &str,
+        constraint: &str,
+        required: bool,
+        probe_kind: ProbeKind,
+    ) -> Requirement {
         Requirement {
             tool: tool.to_string(),
             constraint: Some(constraint.to_string()),
@@ -1241,9 +1246,7 @@ force_required = ["go"]
         let data = build_data(&policy, &parsed, &requirements, &outcome);
         let observed = data.get("observed").expect("observed block");
 
-        let source_kinds = observed["source_kinds"]
-            .as_array()
-            .expect("source_kinds");
+        let source_kinds = observed["source_kinds"].as_array().expect("source_kinds");
         let probe_kinds = observed["probe_kinds"].as_array().expect("probe_kinds");
 
         let source_list: Vec<String> = source_kinds
@@ -1392,7 +1395,11 @@ force_required = ["go"]
     #[test]
     fn probe_requirements_with_debug_log_writes_header_even_when_empty() {
         let root = temp_root_dir("probe-debug");
-        let log_path = root.join("artifacts").join("env-check").join("extras").join("raw.log");
+        let log_path = root
+            .join("artifacts")
+            .join("env-check")
+            .join("extras")
+            .join("raw.log");
         let options = CheckOptions {
             debug_log_path: Some(log_path.clone()),
         };

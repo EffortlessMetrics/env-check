@@ -416,8 +416,8 @@ fn compute_status(counts: &Counts, fail_on: &FailOn, no_sources: bool) -> Verdic
 mod tests {
     use super::*;
     use env_check_types::{
-        codes, FailOn, Observation, ProbeKind, ProbeRecord, Profile, Requirement, SourceKind,
-        SourceRef,
+        FailOn, Observation, ProbeKind, ProbeRecord, Profile, Requirement, SourceKind, SourceRef,
+        codes,
     };
 
     fn req(tool: &str, constraint: Option<&str>) -> Requirement {
@@ -673,10 +673,11 @@ mod tests {
         let obs = vec![obs("node", true, Some("20.11.0"))];
         let out = evaluate(&reqs, &obs, &policy, &[".tool-versions".into()]);
         assert_eq!(out.verdict.status, VerdictStatus::Warn);
-        assert!(out
-            .findings
-            .iter()
-            .any(|f| f.code == codes::ENV_VERSION_MISMATCH));
+        assert!(
+            out.findings
+                .iter()
+                .any(|f| f.code == codes::ENV_VERSION_MISMATCH)
+        );
     }
 
     #[test]
@@ -686,10 +687,11 @@ mod tests {
         let obs = vec![obs("node", true, Some("node"))];
         let out = evaluate(&reqs, &obs, &policy, &[".tool-versions".into()]);
         assert_eq!(out.verdict.status, VerdictStatus::Warn);
-        assert!(out
-            .findings
-            .iter()
-            .any(|f| f.code == codes::ENV_VERSION_MISMATCH));
+        assert!(
+            out.findings
+                .iter()
+                .any(|f| f.code == codes::ENV_VERSION_MISMATCH)
+        );
     }
 
     #[test]
@@ -1090,10 +1092,11 @@ mod tests {
         }];
         let out = evaluate(&reqs, &obs, &policy, &[".tool-versions".into()]);
 
-        assert!(out
-            .findings
-            .iter()
-            .any(|f| f.code == codes::TOOL_RUNTIME_ERROR));
+        assert!(
+            out.findings
+                .iter()
+                .any(|f| f.code == codes::TOOL_RUNTIME_ERROR)
+        );
         assert!(out.verdict.reasons.contains(&"tool_error".to_string()));
     }
 
@@ -1120,8 +1123,7 @@ mod tests {
 
         assert_eq!(out.verdict.status, VerdictStatus::Warn);
         assert!(out.findings.iter().any(|f| {
-            f.code == codes::ENV_VERSION_MISMATCH
-                && f.message.contains("Could not parse version")
+            f.code == codes::ENV_VERSION_MISMATCH && f.message.contains("Could not parse version")
         }));
     }
 
@@ -1160,10 +1162,11 @@ mod tests {
         }];
         let out = evaluate(&reqs, &obs, &policy, &["rust-toolchain.toml".into()]);
 
-        assert!(out
-            .findings
-            .iter()
-            .any(|f| f.code == codes::ENV_TOOLCHAIN_MISSING));
+        assert!(
+            out.findings
+                .iter()
+                .any(|f| f.code == codes::ENV_TOOLCHAIN_MISSING)
+        );
     }
 
     #[test]
@@ -1198,10 +1201,11 @@ mod tests {
         }];
         let out = evaluate(&reqs, &obs, &policy, &["scripts/tools.sha256".into()]);
 
-        assert!(out
-            .findings
-            .iter()
-            .any(|f| f.code == codes::ENV_MISSING_TOOL));
+        assert!(
+            out.findings
+                .iter()
+                .any(|f| f.code == codes::ENV_MISSING_TOOL)
+        );
     }
 
     #[test]
@@ -1236,10 +1240,11 @@ mod tests {
         }];
         let out = evaluate(&reqs, &obs, &policy, &["scripts/tools.sha256".into()]);
 
-        assert!(out
-            .findings
-            .iter()
-            .any(|f| f.code == codes::ENV_HASH_MISMATCH));
+        assert!(
+            out.findings
+                .iter()
+                .any(|f| f.code == codes::ENV_HASH_MISMATCH)
+        );
     }
 
     // ==================== Edge cases ====================

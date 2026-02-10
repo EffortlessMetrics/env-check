@@ -925,8 +925,11 @@ mod tests {
         let root = temp_dir("fixtures");
         let json_path = root.join("ok.json");
         let txt_path = root.join("ignore.txt");
-        fs::write(&json_path, serde_json::to_string_pretty(&json!({"schema": "ok"})).unwrap())
-            .expect("write json");
+        fs::write(
+            &json_path,
+            serde_json::to_string_pretty(&json!({"schema": "ok"})).unwrap(),
+        )
+        .expect("write json");
         fs::write(&txt_path, "ignore").expect("write txt");
 
         let schema = jsonschema::validator_for(&json!({"type": "object"})).unwrap();

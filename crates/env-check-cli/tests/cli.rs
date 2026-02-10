@@ -1399,7 +1399,11 @@ fn check_help_shows_debug_options() {
 #[test]
 fn debug_default_layout_artifact_ref_is_extras_raw_log() {
     let tmp = tempdir().unwrap();
-    let out_path = tmp.path().join("artifacts").join("env-check").join("report.json");
+    let out_path = tmp
+        .path()
+        .join("artifacts")
+        .join("env-check")
+        .join("report.json");
 
     let mut cmd = env_check_cmd();
     cmd.arg("check")
@@ -1413,7 +1417,9 @@ fn debug_default_layout_artifact_ref_is_extras_raw_log() {
 
     let content = fs::read_to_string(&out_path).unwrap();
     let json: Value = serde_json::from_str(&content).unwrap();
-    let artifacts = json["artifacts"].as_array().expect("artifacts should be an array");
+    let artifacts = json["artifacts"]
+        .as_array()
+        .expect("artifacts should be an array");
     assert_eq!(artifacts.len(), 1, "should have exactly one artifact ref");
     assert_eq!(
         artifacts[0]["path"].as_str().unwrap(),
@@ -1439,12 +1445,22 @@ fn debug_custom_out_artifact_ref_is_extras_raw_log() {
     cmd.assert().success();
 
     // Log should be at <out_parent>/extras/raw.log
-    let log_path = tmp.path().join("custom").join("dir").join("extras").join("raw.log");
-    assert!(log_path.exists(), "debug log should exist at <out_parent>/extras/raw.log");
+    let log_path = tmp
+        .path()
+        .join("custom")
+        .join("dir")
+        .join("extras")
+        .join("raw.log");
+    assert!(
+        log_path.exists(),
+        "debug log should exist at <out_parent>/extras/raw.log"
+    );
 
     let content = fs::read_to_string(&out_path).unwrap();
     let json: Value = serde_json::from_str(&content).unwrap();
-    let artifacts = json["artifacts"].as_array().expect("artifacts should be an array");
+    let artifacts = json["artifacts"]
+        .as_array()
+        .expect("artifacts should be an array");
     assert_eq!(artifacts.len(), 1);
     assert_eq!(artifacts[0]["path"].as_str().unwrap(), "extras/raw.log");
 }
@@ -1467,19 +1483,32 @@ fn external_log_file_no_artifact_ref() {
     cmd.assert().success();
 
     // Log file should exist on disk
-    assert!(external_log.exists(), "external log file should be written to disk");
+    assert!(
+        external_log.exists(),
+        "external log file should be written to disk"
+    );
 
     // But no artifact ref in the receipt (path is outside receipt parent)
     let content = fs::read_to_string(&out_path).unwrap();
     let json: Value = serde_json::from_str(&content).unwrap();
-    let has_artifacts = json.get("artifacts").and_then(|a| a.as_array()).is_none_or(|a| a.is_empty());
-    assert!(has_artifacts, "receipt should have no artifact refs for external log paths");
+    let has_artifacts = json
+        .get("artifacts")
+        .and_then(|a| a.as_array())
+        .is_none_or(|a| a.is_empty());
+    assert!(
+        has_artifacts,
+        "receipt should have no artifact refs for external log paths"
+    );
 }
 
 #[test]
 fn artifact_ref_passes_schema_validation() {
     let tmp = tempdir().unwrap();
-    let out_path = tmp.path().join("artifacts").join("env-check").join("report.json");
+    let out_path = tmp
+        .path()
+        .join("artifacts")
+        .join("env-check")
+        .join("report.json");
 
     let mut cmd = env_check_cmd();
     cmd.arg("check")
@@ -1495,7 +1524,10 @@ fn artifact_ref_passes_schema_validation() {
     let json: Value = serde_json::from_str(&content).unwrap();
 
     // Verify artifacts field exists
-    assert!(json.get("artifacts").is_some(), "receipt should have artifacts field");
+    assert!(
+        json.get("artifacts").is_some(),
+        "receipt should have artifacts field"
+    );
 
     // Validate against schema
     let schema = envelope_schema();
