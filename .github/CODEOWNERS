@@ -1,0 +1,4 @@
+# .github/CODEOWNERS
+# Protection for repository-as-code settings
+
+/.github/settings.yml @EffortlessSteven

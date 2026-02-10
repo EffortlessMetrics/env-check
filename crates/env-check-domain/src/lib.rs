@@ -334,20 +334,15 @@ fn coerce_version(raw: &str) -> Option<Version> {
 }
 
 fn satisfies_semverish(constraint: &str, have: &str) -> bool {
-    let Some(v) = coerce_version(have) else {
-        return false;
-    };
-
-    // If constraint is an exact version, semver also accepts it as a requirement.
-    let req = match VersionReq::parse(constraint.trim()) {
-        Ok(r) => r,
-        Err(_) => {
-            // Fallback: exact match (string containment) for non-semver constraints.
-            return have.trim() == constraint.trim();
+    if let Some(v) = coerce_version(have) {
+        // If constraint is an exact version, semver also accepts it as a requirement.
+        if let Ok(req) = VersionReq::parse(constraint.trim()) {
+            return req.matches(&v);
         }
-    };
+    }
 
-    req.matches(&v)
+    // Fallback: exact match (string containment) for non-semver constraints or values.
+    have.trim() == constraint.trim()
 }
 
 fn count(findings: &[Finding]) -> Counts {

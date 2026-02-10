@@ -80,6 +80,8 @@ The project employs a multi-layered testing strategy to ensure reliability and c
 ## Key Files & Directories
 
 *   **`Cargo.toml`**: Workspace configuration.
+*   **`.github/settings.yml`**: Repository metadata and settings (managed via "Settings" app).
+*   **`.github/CODEOWNERS`**: Code ownership and protection rules.
 *   **`action.yml`**: GitHub Action definition.
 *   **`xtask/`**: helper scripts and automation.
 *   **`schemas/`**: JSON schemas for the output reports (`sensor.report.v1.schema.json`).
@@ -90,5 +92,6 @@ The project employs a multi-layered testing strategy to ensure reliability and c
 
 *   **Rust Edition:** 2024.
 *   **Code Style:** Standard `rustfmt` and `clippy` guidelines.
+*   **Settings-as-Code:** Repository "About" metadata is managed via `.github/settings.yml`.
 *   **Determinism:** Outputs must be deterministic (verified by `xtask conform`).
 *   **Safety:** The tool is designed to be safe to run; it never modifies the repository or installs software.

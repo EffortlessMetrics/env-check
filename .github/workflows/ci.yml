@@ -12,7 +12,9 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: llvm-tools-preview, rustfmt, clippy
+
+      - uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: fmt
         run: cargo fmt --all -- --check
@@ -20,14 +22,17 @@ jobs:
       - name: clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: test
-        run: cargo test --all
+      - name: test (coverage)
+        run: cargo llvm-cov --all --fail-under-lines 100
 
       - name: bdd
         run: cargo test -p env-check-cli --test bdd
 
       - name: schema-check
         run: cargo run -p xtask -- schema-check
+
+      - name: conform
+        run: cargo run -p xtask -- conform
 
   mutants:
     # Timebox mutation testing; keep it non-blocking initially.
