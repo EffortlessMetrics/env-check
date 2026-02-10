@@ -497,4 +497,19 @@ mod tests {
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("missing toolchain.channel"));
     }
+
+    #[test]
+    fn rust_toolchain_toml_in_legacy_file_parses() {
+        let root = Path::new("/fake");
+        let path = root.join("rust-toolchain");
+        let content = r#"
+[toolchain]
+channel = "1.75.0"
+"#;
+        let reqs = parse_rust_toolchain_str(root, &path, content).unwrap();
+        assert_eq!(reqs.len(), 1);
+        assert_eq!(reqs[0].tool, "rust");
+        assert_eq!(reqs[0].constraint.as_deref(), Some("1.75.0"));
+        assert_eq!(reqs[0].probe_kind, ProbeKind::RustupToolchain);
+    }
 }

@@ -380,4 +380,27 @@ mod tests {
         assert!(explain("tool.runtime_error").contains("execute"));
         assert!(explain("unknown.code").contains("Unknown code"));
     }
+
+    #[test]
+    fn explain_covers_all_known_codes() {
+        let cases = [
+            ("env.missing_tool", "PATH"),
+            ("env.version_mismatch", "version"),
+            ("env.hash_mismatch", "hash"),
+            ("env.toolchain_missing", "rust"),
+            ("env.source_parse_error", "parse"),
+            ("tool.runtime_error", "probe"),
+        ];
+
+        for (code, expected) in cases {
+            let msg = explain(code);
+            assert!(
+                msg.to_lowercase().contains(&expected.to_lowercase()),
+                "expected explain({}) to mention '{}', got: {}",
+                code,
+                expected,
+                msg
+            );
+        }
+    }
 }

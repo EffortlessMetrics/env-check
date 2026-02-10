@@ -615,6 +615,55 @@ mod tests {
     }
 
     // =========================================================================
+    // Serde + defaults
+    // =========================================================================
+
+    #[test]
+    fn severity_serializes_to_snake_case() {
+        assert_eq!(serde_json::to_string(&Severity::Info).unwrap(), "\"info\"");
+        assert_eq!(serde_json::to_string(&Severity::Warn).unwrap(), "\"warn\"");
+        assert_eq!(serde_json::to_string(&Severity::Error).unwrap(), "\"error\"");
+    }
+
+    #[test]
+    fn verdict_status_serializes_to_snake_case() {
+        assert_eq!(
+            serde_json::to_string(&VerdictStatus::Pass).unwrap(),
+            "\"pass\""
+        );
+        assert_eq!(
+            serde_json::to_string(&VerdictStatus::Warn).unwrap(),
+            "\"warn\""
+        );
+        assert_eq!(
+            serde_json::to_string(&VerdictStatus::Fail).unwrap(),
+            "\"fail\""
+        );
+        assert_eq!(
+            serde_json::to_string(&VerdictStatus::Skip).unwrap(),
+            "\"skip\""
+        );
+    }
+
+    #[test]
+    fn profile_and_fail_on_serialization() {
+        assert_eq!(serde_json::to_string(&Profile::Oss).unwrap(), "\"oss\"");
+        assert_eq!(serde_json::to_string(&Profile::Team).unwrap(), "\"team\"");
+        assert_eq!(serde_json::to_string(&Profile::Strict).unwrap(), "\"strict\"");
+        assert_eq!(serde_json::to_string(&FailOn::Error).unwrap(), "\"error\"");
+        assert_eq!(serde_json::to_string(&FailOn::Warn).unwrap(), "\"warn\"");
+        assert_eq!(serde_json::to_string(&FailOn::Never).unwrap(), "\"never\"");
+    }
+
+    #[test]
+    fn policy_config_default_values() {
+        let cfg = PolicyConfig::default();
+        assert!(matches!(cfg.profile, Profile::Oss));
+        assert!(matches!(cfg.fail_on, FailOn::Error));
+        assert_eq!(cfg.max_findings, Some(100));
+    }
+
+    // =========================================================================
     // ArtifactRef::is_safe() tests
     // =========================================================================
 

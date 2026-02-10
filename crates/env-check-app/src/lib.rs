@@ -657,7 +657,8 @@ fn detect_git(root: &Path) -> Option<GitMeta> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use env_check_types::{ProbeKind, SourceRef};
+    use env_check_types::{ProbeKind, SourceKind, SourceRef};
+    use std::process::Command;
 
     /// Get the path to a test fixture file.
     fn fixture_path(name: &str) -> String {
@@ -924,6 +925,65 @@ mod tests {
         let _ = fs::remove_dir_all(&temp_root);
     }
 
+    fn git_cmd(root: &Path, args: &[&str]) {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .status()
+            .expect("run git");
+        assert!(status.success(), "git {:?} failed", args);
+    }
+
+    fn git_output(root: &Path, args: &[&str]) -> String {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .output()
+            .expect("run git");
+        assert!(output.status.success(), "git {:?} failed", args);
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    }
+
+    #[test]
+    fn compute_merge_base_returns_head_on_main() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let temp_root = std::env::temp_dir().join(format!("env-check-merge-base-ok-{unique}"));
+
+        fs::create_dir_all(&temp_root).expect("create temp repo dir");
+        git_cmd(&temp_root, &["init"]);
+        git_cmd(
+            &temp_root,
+            &[
+                "-c",
+                "user.name=env-check",
+                "-c",
+                "user.email=env-check@example.com",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "init",
+            ],
+        );
+        git_cmd(&temp_root, &["branch", "-M", "main"]);
+
+        let head = git_output(&temp_root, &["rev-parse", "HEAD"]);
+        let merge_base = compute_merge_base(&temp_root, Some("main"));
+        assert_eq!(merge_base.as_deref(), Some(head.as_str()));
+
+        let _ = fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn detect_git_returns_none_when_not_repo() {
+        let root = temp_root_dir("no-git");
+        let git = detect_git(&root);
+        assert!(git.is_none());
+        let _ = fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn detect_host_returns_os_and_arch() {
         let host = detect_host().expect("host metadata");
@@ -961,6 +1021,27 @@ mod tests {
 
         // Same clock produces same timestamps
         assert_eq!(receipt1.run.started_at, receipt2.run.started_at);
+    }
+
+    #[test]
+    fn runtime_error_receipt_populates_expected_fields() {
+        let receipt = runtime_error_receipt("boom");
+
+        assert_eq!(receipt.schema, SCHEMA_ID);
+        assert_eq!(receipt.tool.name, TOOL_NAME);
+        assert_eq!(receipt.verdict.status, VerdictStatus::Fail);
+        assert_eq!(receipt.verdict.counts.error, 1);
+        assert_eq!(receipt.verdict.counts.warn, 0);
+        assert_eq!(receipt.verdict.counts.info, 0);
+        assert_eq!(receipt.verdict.reasons, vec!["tool_error".to_string()]);
+
+        assert_eq!(receipt.findings.len(), 1);
+        let finding = &receipt.findings[0];
+        assert_eq!(finding.severity, Severity::Error);
+        assert_eq!(finding.code, codes::TOOL_RUNTIME_ERROR);
+        assert_eq!(finding.check_id.as_deref(), Some("tool.runtime"));
+        assert_eq!(finding.message, "boom");
+        assert!(finding.location.is_none());
     }
 
     // =========================================================================
@@ -1015,6 +1096,15 @@ mod tests {
     }
 
     #[test]
+    fn load_config_explicit_missing_path_is_error() {
+        let root = temp_root_dir("config-explicit-missing");
+        let missing = root.join("does-not-exist.toml");
+        let err = load_config(&root, Some(&missing)).unwrap_err().to_string();
+        assert!(err.contains("read config"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn load_config_parses_file() {
         let root = temp_root_dir("config-parse");
         let path = root.join("env-check.toml");
@@ -1060,6 +1150,34 @@ force_required = ["go"]
         assert_eq!(out[0].constraint.as_deref(), Some("20"));
         assert_eq!(out[1].tool, "go");
         assert!(out[1].required, "force_required should flip required");
+    }
+
+    #[test]
+    fn normalize_requirements_keeps_distinct_probe_kinds() {
+        let cfg = AppConfig::default();
+        let reqs = vec![
+            make_req("node", "20", true, ProbeKind::PathTool),
+            Requirement {
+                tool: "node".to_string(),
+                constraint: None,
+                required: true,
+                source: SourceRef {
+                    kind: SourceKind::HashManifest,
+                    path: "scripts/tools.sha256".into(),
+                },
+                probe_kind: ProbeKind::FileHash,
+                hash: Some(env_check_types::HashSpec {
+                    algo: env_check_types::HashAlgo::Sha256,
+                    hex: "deadbeef".into(),
+                    path: "scripts/tool.sh".into(),
+                }),
+            },
+        ];
+
+        let out = normalize_requirements(reqs, &cfg);
+        assert_eq!(out.len(), 2);
+        assert!(out.iter().any(|r| r.probe_kind == ProbeKind::PathTool));
+        assert!(out.iter().any(|r| r.probe_kind == ProbeKind::FileHash));
     }
 
     // =========================================================================
@@ -1182,6 +1300,36 @@ force_required = ["go"]
     }
 
     #[test]
+    fn build_capabilities_sources_without_requirements_skips_engine() {
+        let parsed = ParsedSources {
+            sources_used: vec![SourceRef {
+                kind: SourceKind::ToolVersions,
+                path: ".tool-versions".into(),
+            }],
+            requirements: vec![],
+            findings: vec![],
+        };
+
+        let caps = build_capabilities(&parsed, &[], None);
+        assert_eq!(caps.inputs.status, CapabilityStatus::Available);
+        assert_eq!(caps.inputs.reason, None);
+        assert_eq!(caps.engine.status, CapabilityStatus::Skipped);
+        assert_eq!(caps.engine.reason.as_deref(), Some("no_requirements"));
+    }
+
+    #[test]
+    fn build_capabilities_requirements_without_sources_marks_inputs_unavailable() {
+        let parsed = ParsedSources::empty();
+        let reqs = vec![make_req("node", "20", true, ProbeKind::PathTool)];
+
+        let caps = build_capabilities(&parsed, &reqs, None);
+        assert_eq!(caps.inputs.status, CapabilityStatus::Unavailable);
+        assert_eq!(caps.inputs.reason.as_deref(), Some("no_sources_found"));
+        assert_eq!(caps.engine.status, CapabilityStatus::Available);
+        assert_eq!(caps.engine.reason, None);
+    }
+
+    #[test]
     fn source_kind_to_string_all_variants() {
         let variants = vec![
             (SourceKind::ToolVersions, "tool-versions"),
@@ -1233,6 +1381,12 @@ force_required = ["go"]
         assert!(!tmp.exists(), "temp file should be renamed away");
 
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn write_atomic_missing_parent_is_error() {
+        let err = write_atomic(Path::new("/"), b"{}").unwrap_err();
+        assert!(err.to_string().contains("no parent dir"));
     }
 
     #[test]

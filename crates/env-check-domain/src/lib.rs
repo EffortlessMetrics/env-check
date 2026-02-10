@@ -667,6 +667,32 @@ mod tests {
     }
 
     #[test]
+    fn non_semver_constraint_mismatch_warns() {
+        let policy = PolicyConfig::default();
+        let reqs = vec![req("node", Some("lts/*"))];
+        let obs = vec![obs("node", true, Some("20.11.0"))];
+        let out = evaluate(&reqs, &obs, &policy, &[".tool-versions".into()]);
+        assert_eq!(out.verdict.status, VerdictStatus::Warn);
+        assert!(out
+            .findings
+            .iter()
+            .any(|f| f.code == codes::ENV_VERSION_MISMATCH));
+    }
+
+    #[test]
+    fn non_numeric_observation_version_mismatch_warns() {
+        let policy = PolicyConfig::default();
+        let reqs = vec![req("node", Some(">=20"))];
+        let obs = vec![obs("node", true, Some("node"))];
+        let out = evaluate(&reqs, &obs, &policy, &[".tool-versions".into()]);
+        assert_eq!(out.verdict.status, VerdictStatus::Warn);
+        assert!(out
+            .findings
+            .iter()
+            .any(|f| f.code == codes::ENV_VERSION_MISMATCH));
+    }
+
+    #[test]
     fn no_constraint_passes_when_present() {
         let policy = PolicyConfig::default();
         let reqs = vec![req("node", None)];
@@ -1243,5 +1269,37 @@ mod tests {
         let obs = vec![obs("node", true, Some("20.11"))];
         let out = evaluate(&reqs, &obs, &policy, &[".tool-versions".into()]);
         assert_eq!(out.verdict.status, VerdictStatus::Pass);
+    }
+
+    #[test]
+    fn presence_only_constraints_skip_version_checks() {
+        let policy = PolicyConfig::default();
+        let constraints = ["latest", "system", "*", "default", "  latest  "];
+
+        for constraint in constraints {
+            let reqs = vec![req("node", Some(constraint))];
+            let obs = vec![obs("node", true, Some("0.1.0"))];
+            let out = evaluate(&reqs, &obs, &policy, &[".tool-versions".into()]);
+
+            assert!(
+                out.findings.is_empty(),
+                "expected no findings for presence-only constraint '{}'",
+                constraint
+            );
+            assert_eq!(out.verdict.status, VerdictStatus::Pass);
+        }
+    }
+
+    #[test]
+    fn satisfies_semverish_falls_back_to_exact_match() {
+        assert!(satisfies_semverish("v20", "v20"));
+        assert!(!satisfies_semverish("v20", "20"));
+        assert!(!satisfies_semverish("v20", "v21"));
+    }
+
+    #[test]
+    fn coerce_version_empty_string_is_none() {
+        assert!(coerce_version("").is_none());
+        assert!(coerce_version("   ").is_none());
     }
 }
