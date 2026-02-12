@@ -31,7 +31,7 @@ inputs:
   log_file:
     description: "Optional debug log path"
     required: false
-    default: "artifacts/env-check/raw.log"
+    default: "artifacts/env-check/extras/raw.log"
 
 runs:
   using: "composite"
@@ -43,7 +43,7 @@ runs:
         V="${{ inputs.version }}"
         if [ -z "$V" ]; then
           REF="${{ github.action_ref }}"
-          if echo "$REF" | grep -Eq '^v[0-9]'; then
+          if echo "$REF" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+'; then
             V="$REF"
           else
             echo "env-check: version input required when action is not referenced by a vX.Y.Z tag" >&2

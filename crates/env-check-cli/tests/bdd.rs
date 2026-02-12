@@ -102,7 +102,7 @@ fn run_env_check(
 
     let out_path = tmp.path().join("artifacts/env-check/report.json");
     let md_path = tmp.path().join("artifacts/env-check/comment.md");
-    let log_path = tmp.path().join("artifacts/env-check/raw.log");
+    let log_path = tmp.path().join("artifacts/env-check/extras/raw.log");
 
     let mut cmd = Command::new(exe);
     cmd.arg("check")

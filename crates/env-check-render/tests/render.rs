@@ -34,6 +34,7 @@ fn make_receipt(
             reasons: vec![],
         },
         findings,
+        artifacts: vec![],
         data,
     }
 }
@@ -59,6 +60,7 @@ fn make_receipt_with_run_meta(
             reasons: vec![],
         },
         findings,
+        artifacts: vec![],
         data,
     }
 }

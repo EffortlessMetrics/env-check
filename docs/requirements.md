@@ -71,7 +71,7 @@ env-check MUST support these checks:
 - **hash:** when a repo provides hashes for a local binary, verify the hash
 
 env-check SHOULD provide enough provenance to debug mismatches:
-- raw version output captured (in `data` or `raw.log`)
+- raw version output captured (in `data` or `extras/raw.log`)
 - which command was executed (argv vector)
 
 env-check MUST NOT execute probes through a shell.
@@ -116,7 +116,7 @@ env-check MUST write:
 
 - `artifacts/env-check/report.json` (canonical)
 - `artifacts/env-check/comment.md` when `--md` is requested (recommended)
-- optional `raw.log` (future: behind flag)
+- optional `extras/raw.log` (behind `--debug` flag)
 
 Receipt requirements:
 

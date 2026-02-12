@@ -464,6 +464,57 @@ fn exit_code_zero_for_skip_status() {
     assert_eq!(json["verdict"]["status"].as_str().unwrap(), "skip");
 }
 
+#[test]
+fn cockpit_mode_exits_zero_on_fail() {
+    let tmp = tempdir().unwrap();
+    let out_path = tmp.path().join("report.json");
+
+    let mut cmd = env_check_cmd();
+    cmd.arg("check")
+        .arg("--root")
+        .arg(fixtures_dir().join("missing_tool"))
+        .arg("--profile")
+        .arg("team")
+        .arg("--out")
+        .arg(&out_path)
+        .arg("--mode")
+        .arg("cockpit");
+
+    cmd.assert().code(0);
+
+    let content = fs::read_to_string(&out_path).unwrap();
+    let json: Value = serde_json::from_str(&content).unwrap();
+    assert_eq!(json["verdict"]["status"].as_str().unwrap(), "fail");
+}
+
+#[test]
+fn cockpit_mode_exits_zero_on_runtime_error() {
+    let tmp = tempdir().unwrap();
+    let out_path = tmp.path().join("report.json");
+    let bad_config = tmp.path().join("bad.toml");
+
+    fs::write(&bad_config, "not = [toml").unwrap();
+
+    let mut cmd = env_check_cmd();
+    cmd.arg("check")
+        .arg("--root")
+        .arg(fixtures_dir().join("no_sources"))
+        .arg("--config")
+        .arg(&bad_config)
+        .arg("--out")
+        .arg(&out_path)
+        .arg("--mode")
+        .arg("cockpit");
+
+    cmd.assert().code(0);
+
+    let content = fs::read_to_string(&out_path).unwrap();
+    let json: Value = serde_json::from_str(&content).unwrap();
+    assert_eq!(json["verdict"]["status"].as_str().unwrap(), "fail");
+    let reasons = json["verdict"]["reasons"].as_array().unwrap();
+    assert!(reasons.iter().any(|r| r.as_str() == Some("tool_error")));
+}
+
 // =============================================================================
 // OUTPUT FILE TESTS
 // =============================================================================
@@ -1147,7 +1198,6 @@ fn valid_tools_fixture_produces_report() {
 fn debug_flag_creates_raw_log() {
     let tmp = tempdir().unwrap();
     let out_path = tmp.path().join("report.json");
-    let artifacts_dir = tmp.path().join("artifacts").join("env-check");
 
     let mut cmd = env_check_cmd();
     cmd.arg("check")
@@ -1160,8 +1210,8 @@ fn debug_flag_creates_raw_log() {
 
     cmd.assert().success();
 
-    // Verify raw.log was created at default location
-    let log_path = artifacts_dir.join("raw.log");
+    // Debug log is derived relative to --out parent, so <tmp>/extras/raw.log
+    let log_path = tmp.path().join("extras").join("raw.log");
     assert!(
         log_path.exists(),
         "raw.log should be created when --debug flag is used"
@@ -1210,7 +1260,6 @@ fn log_file_flag_creates_custom_log() {
 fn no_debug_flag_does_not_create_log() {
     let tmp = tempdir().unwrap();
     let out_path = tmp.path().join("report.json");
-    let artifacts_dir = tmp.path().join("artifacts").join("env-check");
 
     let mut cmd = env_check_cmd();
     cmd.arg("check")
@@ -1222,8 +1271,8 @@ fn no_debug_flag_does_not_create_log() {
 
     cmd.assert().success();
 
-    // Verify raw.log was NOT created
-    let log_path = artifacts_dir.join("raw.log");
+    // Verify raw.log was NOT created (would be at <out_parent>/extras/raw.log)
+    let log_path = tmp.path().join("extras").join("raw.log");
     assert!(
         !log_path.exists(),
         "raw.log should NOT be created when --debug flag is not used"
@@ -1341,4 +1390,155 @@ fn check_help_shows_debug_options() {
         .stdout(predicate::str::contains("--debug"))
         .stdout(predicate::str::contains("--log-file"))
         .stdout(predicate::str::contains("ENV_CHECK_DEBUG_LOG"));
+}
+
+// =============================================================================
+// ARTIFACT REFERENCE TESTS
+// =============================================================================
+
+#[test]
+fn debug_default_layout_artifact_ref_is_extras_raw_log() {
+    let tmp = tempdir().unwrap();
+    let out_path = tmp
+        .path()
+        .join("artifacts")
+        .join("env-check")
+        .join("report.json");
+
+    let mut cmd = env_check_cmd();
+    cmd.arg("check")
+        .arg("--root")
+        .arg(fixtures_dir().join("valid_tools"))
+        .arg("--out")
+        .arg(&out_path)
+        .arg("--debug");
+
+    cmd.assert().success();
+
+    let content = fs::read_to_string(&out_path).unwrap();
+    let json: Value = serde_json::from_str(&content).unwrap();
+    let artifacts = json["artifacts"]
+        .as_array()
+        .expect("artifacts should be an array");
+    assert_eq!(artifacts.len(), 1, "should have exactly one artifact ref");
+    assert_eq!(
+        artifacts[0]["path"].as_str().unwrap(),
+        "extras/raw.log",
+        "artifact ref should be relative extras/raw.log"
+    );
+    assert_eq!(artifacts[0]["kind"].as_str().unwrap(), "debug_log");
+}
+
+#[test]
+fn debug_custom_out_artifact_ref_is_extras_raw_log() {
+    let tmp = tempdir().unwrap();
+    let out_path = tmp.path().join("custom").join("dir").join("report.json");
+
+    let mut cmd = env_check_cmd();
+    cmd.arg("check")
+        .arg("--root")
+        .arg(fixtures_dir().join("valid_tools"))
+        .arg("--out")
+        .arg(&out_path)
+        .arg("--debug");
+
+    cmd.assert().success();
+
+    // Log should be at <out_parent>/extras/raw.log
+    let log_path = tmp
+        .path()
+        .join("custom")
+        .join("dir")
+        .join("extras")
+        .join("raw.log");
+    assert!(
+        log_path.exists(),
+        "debug log should exist at <out_parent>/extras/raw.log"
+    );
+
+    let content = fs::read_to_string(&out_path).unwrap();
+    let json: Value = serde_json::from_str(&content).unwrap();
+    let artifacts = json["artifacts"]
+        .as_array()
+        .expect("artifacts should be an array");
+    assert_eq!(artifacts.len(), 1);
+    assert_eq!(artifacts[0]["path"].as_str().unwrap(), "extras/raw.log");
+}
+
+#[test]
+fn external_log_file_no_artifact_ref() {
+    let tmp = tempdir().unwrap();
+    let out_path = tmp.path().join("output").join("report.json");
+    let external_log = tmp.path().join("elsewhere").join("debug.log");
+
+    let mut cmd = env_check_cmd();
+    cmd.arg("check")
+        .arg("--root")
+        .arg(fixtures_dir().join("valid_tools"))
+        .arg("--out")
+        .arg(&out_path)
+        .arg("--log-file")
+        .arg(&external_log);
+
+    cmd.assert().success();
+
+    // Log file should exist on disk
+    assert!(
+        external_log.exists(),
+        "external log file should be written to disk"
+    );
+
+    // But no artifact ref in the receipt (path is outside receipt parent)
+    let content = fs::read_to_string(&out_path).unwrap();
+    let json: Value = serde_json::from_str(&content).unwrap();
+    let has_artifacts = json
+        .get("artifacts")
+        .and_then(|a| a.as_array())
+        .is_none_or(|a| a.is_empty());
+    assert!(
+        has_artifacts,
+        "receipt should have no artifact refs for external log paths"
+    );
+}
+
+#[test]
+fn artifact_ref_passes_schema_validation() {
+    let tmp = tempdir().unwrap();
+    let out_path = tmp
+        .path()
+        .join("artifacts")
+        .join("env-check")
+        .join("report.json");
+
+    let mut cmd = env_check_cmd();
+    cmd.arg("check")
+        .arg("--root")
+        .arg(fixtures_dir().join("valid_tools"))
+        .arg("--out")
+        .arg(&out_path)
+        .arg("--debug");
+
+    cmd.assert().success();
+
+    let content = fs::read_to_string(&out_path).unwrap();
+    let json: Value = serde_json::from_str(&content).unwrap();
+
+    // Verify artifacts field exists
+    assert!(
+        json.get("artifacts").is_some(),
+        "receipt should have artifacts field"
+    );
+
+    // Validate against schema
+    let schema = envelope_schema();
+    let errors: Vec<String> = schema
+        .iter_errors(&json)
+        .map(|e| format!("{}: {}", e.instance_path(), e))
+        .collect();
+    if !errors.is_empty() {
+        panic!(
+            "receipt with artifact ref failed schema validation:\n{}",
+            errors.join("\n")
+        );
+    }
 }

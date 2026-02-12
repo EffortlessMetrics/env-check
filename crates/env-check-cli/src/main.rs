@@ -1,10 +1,10 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use env_check_app::{CheckOptions, run_check_with_options, write_atomic};
-use env_check_types::{FailOn, Profile, ReceiptEnvelope};
+use env_check_types::{ArtifactRef, FailOn, Profile, ReceiptEnvelope};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -51,7 +51,7 @@ enum Command {
         #[arg(long)]
         md: Option<PathBuf>,
 
-        /// Enable debug logging (writes to artifacts/env-check/raw.log by default).
+        /// Enable debug logging (writes to artifacts/env-check/extras/raw.log by default).
         /// This is a side artifact that does NOT affect receipt determinism.
         #[arg(long)]
         debug: bool,
@@ -208,12 +208,15 @@ fn main() -> anyhow::Result<()> {
             let debug_log_path = if let Some(path) = log_file {
                 Some(path)
             } else if debug {
-                Some(PathBuf::from("artifacts/env-check/raw.log"))
+                let receipt_parent = out.parent().unwrap_or(Path::new("."));
+                Some(receipt_parent.join("extras").join("raw.log"))
             } else {
                 None
             };
 
-            let options = CheckOptions { debug_log_path };
+            let options = CheckOptions {
+                debug_log_path: debug_log_path.clone(),
+            };
 
             match run_check_with_options(
                 &root,
@@ -224,7 +227,24 @@ fn main() -> anyhow::Result<()> {
             )
             .with_context(|| "run env-check")
             {
-                Ok(output) => {
+                Ok(mut output) => {
+                    // If a debug log was written, add an artifact pointer to the receipt.
+                    // Only safe relative paths are included; absolute/traversal paths are omitted.
+                    if let Some(ref log_path) = debug_log_path
+                        && log_path.exists()
+                        && let Some(receipt_parent) = out.parent()
+                        && let Ok(rel) = log_path.strip_prefix(receipt_parent)
+                    {
+                        let artifact = ArtifactRef {
+                            path: rel.to_string_lossy().replace('\\', "/"),
+                            kind: "debug_log".to_string(),
+                            description: Some("Probe debug transcript".to_string()),
+                        };
+                        if artifact.is_safe() {
+                            output.receipt.artifacts.push(artifact);
+                        }
+                    }
+
                     let json = serde_json::to_vec_pretty(&output.receipt)?;
                     write_atomic(&out, &json)?;
 
@@ -310,6 +330,82 @@ fn explain(code: &str) -> &'static str {
         }
         _ => {
             "Unknown code. If this code was emitted, the explain registry is missing an entry (bug)."
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_mode_accepts_valid_values() {
+        assert_eq!(parse_mode("default").unwrap(), OutputMode::Default);
+        assert_eq!(parse_mode("cockpit").unwrap(), OutputMode::Cockpit);
+    }
+
+    #[test]
+    fn parse_mode_rejects_invalid_value() {
+        let err = parse_mode("nope").unwrap_err();
+        assert!(err.contains("invalid mode"));
+    }
+
+    #[test]
+    fn profile_arg_parses_valid_values() {
+        assert!(matches!("oss".parse::<ProfileArg>(), Ok(ProfileArg::Oss)));
+        assert!(matches!("team".parse::<ProfileArg>(), Ok(ProfileArg::Team)));
+        assert!(matches!(
+            "strict".parse::<ProfileArg>(),
+            Ok(ProfileArg::Strict)
+        ));
+    }
+
+    #[test]
+    fn profile_arg_rejects_invalid_value() {
+        let err = "invalid".parse::<ProfileArg>().unwrap_err();
+        assert!(err.contains("invalid profile"));
+    }
+
+    #[test]
+    fn fail_on_arg_parses_valid_values() {
+        assert!(matches!("error".parse::<FailOnArg>(), Ok(FailOnArg::Error)));
+        assert!(matches!("warn".parse::<FailOnArg>(), Ok(FailOnArg::Warn)));
+        assert!(matches!("never".parse::<FailOnArg>(), Ok(FailOnArg::Never)));
+    }
+
+    #[test]
+    fn fail_on_arg_rejects_invalid_value() {
+        let err = "invalid".parse::<FailOnArg>().unwrap_err();
+        assert!(err.contains("invalid fail_on"));
+    }
+
+    #[test]
+    fn explain_returns_known_and_unknown_messages() {
+        assert!(explain("env.missing_tool").contains("PATH"));
+        assert!(explain("tool.runtime_error").contains("execute"));
+        assert!(explain("unknown.code").contains("Unknown code"));
+    }
+
+    #[test]
+    fn explain_covers_all_known_codes() {
+        let cases = [
+            ("env.missing_tool", "PATH"),
+            ("env.version_mismatch", "version"),
+            ("env.hash_mismatch", "hash"),
+            ("env.toolchain_missing", "rust"),
+            ("env.source_parse_error", "parse"),
+            ("tool.runtime_error", "probe"),
+        ];
+
+        for (code, expected) in cases {
+            let msg = explain(code);
+            assert!(
+                msg.to_lowercase().contains(&expected.to_lowercase()),
+                "expected explain({}) to mention '{}', got: {}",
+                code,
+                expected,
+                msg
+            );
         }
     }
 }

@@ -181,6 +181,53 @@ pub struct Finding {
     pub data: Option<serde_json::Value>,
 }
 
+/// A pointer to a depth artifact produced alongside the receipt.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ArtifactRef {
+    /// Relative path from the receipt file to the artifact.
+    pub path: String,
+    /// Machine-readable kind (e.g. `"debug_log"`).
+    pub kind: String,
+    /// Optional human description.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+impl ArtifactRef {
+    /// Returns `true` if the artifact path is safe to embed in a receipt.
+    ///
+    /// A safe path is:
+    /// - Not empty
+    /// - Not absolute (no leading `/`, no Windows drive letter like `C:/`)
+    /// - Forward-slash only (no backslashes)
+    /// - No `..` traversal components
+    pub fn is_safe(&self) -> bool {
+        let p = &self.path;
+        if p.is_empty() {
+            return false;
+        }
+        // No backslashes
+        if p.contains('\\') {
+            return false;
+        }
+        // No absolute unix paths
+        if p.starts_with('/') {
+            return false;
+        }
+        // No Windows drive letters (e.g. C:/ or D:\)
+        if p.len() >= 2 && p.as_bytes()[1] == b':' && p.as_bytes()[0].is_ascii_alphabetic() {
+            return false;
+        }
+        // No .. traversal components
+        for component in p.split('/') {
+            if component == ".." {
+                return false;
+            }
+        }
+        true
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ReceiptEnvelope {
     pub schema: String,
@@ -189,6 +236,8 @@ pub struct ReceiptEnvelope {
     pub verdict: Verdict,
     #[serde(default)]
     pub findings: Vec<Finding>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub artifacts: Vec<ArtifactRef>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
 }
@@ -457,5 +506,325 @@ mod tests {
         let parsed: RunMeta = serde_json::from_str(json).unwrap();
 
         assert!(parsed.capabilities.is_none());
+    }
+
+    #[test]
+    fn artifact_ref_serialization_round_trip() {
+        let artifact = ArtifactRef {
+            path: "extras/raw.log".to_string(),
+            kind: "debug_log".to_string(),
+            description: Some("Probe debug transcript".to_string()),
+        };
+        let json = serde_json::to_string(&artifact).unwrap();
+        let parsed: ArtifactRef = serde_json::from_str(&json).unwrap();
+        assert_eq!(artifact, parsed);
+    }
+
+    #[test]
+    fn artifact_ref_omits_none_description() {
+        let artifact = ArtifactRef {
+            path: "extras/raw.log".to_string(),
+            kind: "debug_log".to_string(),
+            description: None,
+        };
+        let json = serde_json::to_string(&artifact).unwrap();
+        assert!(!json.contains("description"));
+    }
+
+    #[test]
+    fn receipt_envelope_omits_empty_artifacts() {
+        use chrono::TimeZone;
+        let receipt = ReceiptEnvelope {
+            schema: "sensor.report.v1".to_string(),
+            tool: ToolMeta {
+                name: "env-check".to_string(),
+                version: "0.1.0".to_string(),
+                commit: None,
+            },
+            run: RunMeta {
+                started_at: Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
+                ended_at: None,
+                duration_ms: None,
+                host: None,
+                ci: None,
+                git: None,
+                capabilities: None,
+            },
+            verdict: Verdict {
+                status: VerdictStatus::Pass,
+                counts: Counts::default(),
+                reasons: vec![],
+            },
+            findings: vec![],
+            artifacts: vec![],
+            data: None,
+        };
+        let json = serde_json::to_string(&receipt).unwrap();
+        assert!(
+            !json.contains("artifacts"),
+            "empty artifacts should be omitted"
+        );
+    }
+
+    #[test]
+    fn receipt_envelope_includes_nonempty_artifacts() {
+        use chrono::TimeZone;
+        let receipt = ReceiptEnvelope {
+            schema: "sensor.report.v1".to_string(),
+            tool: ToolMeta {
+                name: "env-check".to_string(),
+                version: "0.1.0".to_string(),
+                commit: None,
+            },
+            run: RunMeta {
+                started_at: Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
+                ended_at: None,
+                duration_ms: None,
+                host: None,
+                ci: None,
+                git: None,
+                capabilities: None,
+            },
+            verdict: Verdict {
+                status: VerdictStatus::Pass,
+                counts: Counts::default(),
+                reasons: vec![],
+            },
+            findings: vec![],
+            artifacts: vec![ArtifactRef {
+                path: "extras/raw.log".to_string(),
+                kind: "debug_log".to_string(),
+                description: Some("Probe debug transcript".to_string()),
+            }],
+            data: None,
+        };
+        let json = serde_json::to_string(&receipt).unwrap();
+        assert!(
+            json.contains("artifacts"),
+            "non-empty artifacts should be serialized"
+        );
+        assert!(json.contains("extras/raw.log"));
+    }
+
+    #[test]
+    fn receipt_envelope_without_artifacts_field_deserializes() {
+        // Backward compatibility: JSON without artifacts field should deserialize
+        let json = r#"{
+            "schema": "sensor.report.v1",
+            "tool": {"name": "env-check", "version": "0.1.0"},
+            "run": {"started_at": "2024-01-01T00:00:00Z"},
+            "verdict": {"status": "pass", "counts": {"info": 0, "warn": 0, "error": 0}},
+            "findings": []
+        }"#;
+        let parsed: ReceiptEnvelope = serde_json::from_str(json).unwrap();
+        assert!(parsed.artifacts.is_empty());
+    }
+
+    // =========================================================================
+    // Serde + defaults
+    // =========================================================================
+
+    #[test]
+    fn severity_serializes_to_snake_case() {
+        assert_eq!(serde_json::to_string(&Severity::Info).unwrap(), "\"info\"");
+        assert_eq!(serde_json::to_string(&Severity::Warn).unwrap(), "\"warn\"");
+        assert_eq!(
+            serde_json::to_string(&Severity::Error).unwrap(),
+            "\"error\""
+        );
+    }
+
+    #[test]
+    fn verdict_status_serializes_to_snake_case() {
+        assert_eq!(
+            serde_json::to_string(&VerdictStatus::Pass).unwrap(),
+            "\"pass\""
+        );
+        assert_eq!(
+            serde_json::to_string(&VerdictStatus::Warn).unwrap(),
+            "\"warn\""
+        );
+        assert_eq!(
+            serde_json::to_string(&VerdictStatus::Fail).unwrap(),
+            "\"fail\""
+        );
+        assert_eq!(
+            serde_json::to_string(&VerdictStatus::Skip).unwrap(),
+            "\"skip\""
+        );
+    }
+
+    #[test]
+    fn profile_and_fail_on_serialization() {
+        assert_eq!(serde_json::to_string(&Profile::Oss).unwrap(), "\"oss\"");
+        assert_eq!(serde_json::to_string(&Profile::Team).unwrap(), "\"team\"");
+        assert_eq!(
+            serde_json::to_string(&Profile::Strict).unwrap(),
+            "\"strict\""
+        );
+        assert_eq!(serde_json::to_string(&FailOn::Error).unwrap(), "\"error\"");
+        assert_eq!(serde_json::to_string(&FailOn::Warn).unwrap(), "\"warn\"");
+        assert_eq!(serde_json::to_string(&FailOn::Never).unwrap(), "\"never\"");
+    }
+
+    #[test]
+    fn policy_config_default_values() {
+        let cfg = PolicyConfig::default();
+        assert!(matches!(cfg.profile, Profile::Oss));
+        assert!(matches!(cfg.fail_on, FailOn::Error));
+        assert_eq!(cfg.max_findings, Some(100));
+    }
+
+    // =========================================================================
+    // ArtifactRef::is_safe() tests
+    // =========================================================================
+
+    #[test]
+    fn artifact_ref_is_safe_valid_relative_path() {
+        let a = ArtifactRef {
+            path: "extras/raw.log".to_string(),
+            kind: "debug_log".to_string(),
+            description: None,
+        };
+        assert!(a.is_safe());
+    }
+
+    #[test]
+    fn artifact_ref_is_safe_rejects_empty() {
+        let a = ArtifactRef {
+            path: "".to_string(),
+            kind: "debug_log".to_string(),
+            description: None,
+        };
+        assert!(!a.is_safe());
+    }
+
+    #[test]
+    fn artifact_ref_is_safe_rejects_absolute_unix() {
+        let a = ArtifactRef {
+            path: "/tmp/raw.log".to_string(),
+            kind: "debug_log".to_string(),
+            description: None,
+        };
+        assert!(!a.is_safe());
+    }
+
+    #[test]
+    fn artifact_ref_is_safe_rejects_absolute_windows() {
+        let a = ArtifactRef {
+            path: "C:/Users/raw.log".to_string(),
+            kind: "debug_log".to_string(),
+            description: None,
+        };
+        assert!(!a.is_safe());
+    }
+
+    #[test]
+    fn artifact_ref_is_safe_rejects_backslash() {
+        let a = ArtifactRef {
+            path: "extras\\raw.log".to_string(),
+            kind: "debug_log".to_string(),
+            description: None,
+        };
+        assert!(!a.is_safe());
+    }
+
+    #[test]
+    fn artifact_ref_is_safe_rejects_dotdot_at_start() {
+        let a = ArtifactRef {
+            path: "../secret/raw.log".to_string(),
+            kind: "debug_log".to_string(),
+            description: None,
+        };
+        assert!(!a.is_safe());
+    }
+
+    #[test]
+    fn artifact_ref_is_safe_rejects_dotdot_mid_path() {
+        let a = ArtifactRef {
+            path: "extras/../../../etc/passwd".to_string(),
+            kind: "debug_log".to_string(),
+            description: None,
+        };
+        assert!(!a.is_safe());
+    }
+
+    #[test]
+    fn severity_rank_orders_correctly() {
+        assert!(Severity::Error.rank() > Severity::Warn.rank());
+        assert!(Severity::Warn.rank() > Severity::Info.rank());
+    }
+
+    #[test]
+    fn finding_sort_key_orders_by_severity_and_path() {
+        let mut findings = [
+            Finding {
+                severity: Severity::Info,
+                check_id: Some("b".into()),
+                code: "code_b".into(),
+                message: "msg_b".into(),
+                location: Some(Location {
+                    path: "b.txt".into(),
+                    line: None,
+                    col: None,
+                }),
+                help: None,
+                url: None,
+                fingerprint: None,
+                data: None,
+            },
+            Finding {
+                severity: Severity::Error,
+                check_id: Some("a".into()),
+                code: "code_a".into(),
+                message: "msg_a".into(),
+                location: Some(Location {
+                    path: "a.txt".into(),
+                    line: None,
+                    col: None,
+                }),
+                help: None,
+                url: None,
+                fingerprint: None,
+                data: None,
+            },
+            Finding {
+                severity: Severity::Warn,
+                check_id: Some("c".into()),
+                code: "code_c".into(),
+                message: "msg_c".into(),
+                location: None, // empty path should sort before "z.txt" if same severity
+                help: None,
+                url: None,
+                fingerprint: None,
+                data: None,
+            },
+            Finding {
+                severity: Severity::Warn,
+                check_id: Some("d".into()),
+                code: "code_d".into(),
+                message: "msg_d".into(),
+                location: Some(Location {
+                    path: "z.txt".into(),
+                    line: None,
+                    col: None,
+                }),
+                help: None,
+                url: None,
+                fingerprint: None,
+                data: None,
+            },
+        ];
+
+        findings.sort_by_key(finding_sort_key);
+
+        assert_eq!(findings[0].severity, Severity::Error);
+        assert_eq!(findings[1].severity, Severity::Warn);
+        assert_eq!(findings[2].severity, Severity::Warn);
+        assert_eq!(findings[3].severity, Severity::Info);
+
+        // For equal severity (warn), empty path sorts before "z.txt"
+        assert!(findings[1].location.is_none());
+        assert_eq!(findings[2].location.as_ref().unwrap().path, "z.txt");
     }
 }

@@ -363,3 +363,148 @@ pub(crate) fn rel(root: &Path, path: &Path) -> String {
         .to_string_lossy()
         .replace('\\', "/")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    fn parse_all_collects_sources_and_sorts_requirements() {
+        let dir = tempdir().expect("temp dir");
+        let root = dir.path();
+
+        fs::write(root.join(".tool-versions"), "python 3.11\nnode 20\n")
+            .expect("write .tool-versions");
+        fs::write(root.join(".node-version"), "18.0.0\n").expect("write .node-version");
+
+        let scripts_dir = root.join("scripts");
+        fs::create_dir_all(&scripts_dir).expect("create scripts dir");
+        fs::write(
+            scripts_dir.join("tools.sha256"),
+            "deadbeef  scripts/tool.sh\n",
+        )
+        .expect("write tools.sha256");
+
+        let parsed = parse_all(root, &[PathBuf::from("scripts/tools.sha256")]);
+
+        let sources: Vec<String> = parsed.sources_used.iter().map(|s| s.path.clone()).collect();
+        assert_eq!(
+            sources,
+            vec![".tool-versions", ".node-version", "scripts/tools.sha256"]
+        );
+
+        let tools: Vec<String> = parsed.requirements.iter().map(|r| r.tool.clone()).collect();
+        assert_eq!(
+            tools,
+            vec!["file:scripts/tool.sh", "node", "node", "python",]
+        );
+
+        let node_paths: Vec<String> = parsed
+            .requirements
+            .iter()
+            .filter(|r| r.tool == "node")
+            .map(|r| r.source.path.clone())
+            .collect();
+        assert_eq!(node_paths, vec![".node-version", ".tool-versions"]);
+
+        assert!(parsed.findings.is_empty());
+    }
+
+    #[test]
+    fn parse_all_emits_parse_error_finding() {
+        let dir = tempdir().expect("temp dir");
+        let root = dir.path();
+
+        fs::write(root.join(".mise.toml"), "this is not toml {{{\n")
+            .expect("write invalid .mise.toml");
+
+        let parsed = parse_all(root, &[]);
+        assert_eq!(parsed.findings.len(), 1);
+        let finding = &parsed.findings[0];
+        assert_eq!(finding.code, codes::ENV_SOURCE_PARSE_ERROR);
+        assert_eq!(finding.check_id.as_deref(), Some(checks::SOURCE_PARSE));
+        assert!(finding.message.contains(".mise.toml"));
+        assert_eq!(
+            finding.location.as_ref().map(|l| l.path.as_str()),
+            Some(".mise.toml")
+        );
+    }
+
+    #[test]
+    fn tool_versions_missing_version_is_error() {
+        let root = Path::new("/fake");
+        let path = root.join(".tool-versions");
+        let result = parse_tool_versions_str(root, &path, "node");
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("missing version"));
+    }
+
+    #[test]
+    fn mise_toml_missing_tools_table_is_error() {
+        let root = Path::new("/fake");
+        let path = root.join(".mise.toml");
+        let result = parse_mise_toml_str(root, &path, "[settings]\nexperimental = true\n");
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("missing [tools] table"));
+    }
+
+    #[test]
+    fn mise_toml_tools_not_table_is_error() {
+        let root = Path::new("/fake");
+        let path = root.join(".mise.toml");
+        let result = parse_mise_toml_str(root, &path, "tools = \"node\"");
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("[tools] must be a table"));
+    }
+
+    #[test]
+    fn rust_toolchain_legacy_format_parses_channel() {
+        let root = Path::new("/fake");
+        let path = root.join("rust-toolchain");
+        let reqs = parse_rust_toolchain_str(root, &path, "stable").unwrap();
+        assert_eq!(reqs.len(), 1);
+        assert_eq!(reqs[0].tool, "rust");
+        assert_eq!(reqs[0].constraint.as_deref(), Some("stable"));
+        assert_eq!(reqs[0].probe_kind, ProbeKind::RustupToolchain);
+    }
+
+    #[test]
+    fn rust_toolchain_missing_table_is_error() {
+        let root = Path::new("/fake");
+        let path = root.join("rust-toolchain.toml");
+        let result = parse_rust_toolchain_str(root, &path, "[not_toolchain]\nfoo = \"bar\"");
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("missing [toolchain] table"));
+    }
+
+    #[test]
+    fn rust_toolchain_missing_channel_is_error() {
+        let root = Path::new("/fake");
+        let path = root.join("rust-toolchain.toml");
+        let result = parse_rust_toolchain_str(root, &path, "[toolchain]\nprofile = \"default\"");
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("missing toolchain.channel"));
+    }
+
+    #[test]
+    fn rust_toolchain_toml_in_legacy_file_parses() {
+        let root = Path::new("/fake");
+        let path = root.join("rust-toolchain");
+        let content = r#"
+[toolchain]
+channel = "1.75.0"
+"#;
+        let reqs = parse_rust_toolchain_str(root, &path, content).unwrap();
+        assert_eq!(reqs.len(), 1);
+        assert_eq!(reqs[0].tool, "rust");
+        assert_eq!(reqs[0].constraint.as_deref(), Some("1.75.0"));
+        assert_eq!(reqs[0].probe_kind, ProbeKind::RustupToolchain);
+    }
+}

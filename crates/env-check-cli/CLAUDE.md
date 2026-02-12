@@ -26,7 +26,7 @@ env-check [OPTIONS]  # 'check' is implicit
 | `--out <PATH>` | `artifacts/env-check/report.json` | Receipt output path |
 | `--md <PATH>` | - | Optional markdown output |
 | `--debug` | false | Enable debug logging |
-| `--log-file <PATH>` | `artifacts/env-check/raw.log` | Debug log path |
+| `--log-file <PATH>` | `artifacts/env-check/extras/raw.log` | Debug log path |
 
 Environment: `ENV_CHECK_DEBUG_LOG` overrides `--log-file`
 

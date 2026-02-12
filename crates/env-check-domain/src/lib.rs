@@ -334,20 +334,15 @@ fn coerce_version(raw: &str) -> Option<Version> {
 }
 
 fn satisfies_semverish(constraint: &str, have: &str) -> bool {
-    let Some(v) = coerce_version(have) else {
-        return false;
-    };
-
-    // If constraint is an exact version, semver also accepts it as a requirement.
-    let req = match VersionReq::parse(constraint.trim()) {
-        Ok(r) => r,
-        Err(_) => {
-            // Fallback: exact match (string containment) for non-semver constraints.
-            return have.trim() == constraint.trim();
+    if let Some(v) = coerce_version(have) {
+        // If constraint is an exact version, semver also accepts it as a requirement.
+        if let Ok(req) = VersionReq::parse(constraint.trim()) {
+            return req.matches(&v);
         }
-    };
+    }
 
-    req.matches(&v)
+    // Fallback: exact match (string containment) for non-semver constraints or values.
+    have.trim() == constraint.trim()
 }
 
 fn count(findings: &[Finding]) -> Counts {
@@ -417,6 +412,7 @@ mod tests {
     use super::*;
     use env_check_types::{
         FailOn, Observation, ProbeKind, ProbeRecord, Profile, Requirement, SourceKind, SourceRef,
+        codes,
     };
 
     fn req(tool: &str, constraint: Option<&str>) -> Requirement {
@@ -653,6 +649,44 @@ mod tests {
         let obs = vec![obs("node", true, Some("18.0.0"))];
         let out = evaluate(&reqs, &obs, &policy, &[".tool-versions".into()]);
         assert_eq!(out.verdict.status, VerdictStatus::Pass);
+    }
+
+    #[test]
+    fn presence_only_constraint_default_passes() {
+        let policy = PolicyConfig::default();
+        let reqs = vec![req("node", Some("default"))];
+        let obs = vec![obs("node", true, Some("18.0.0"))];
+        let out = evaluate(&reqs, &obs, &policy, &[".tool-versions".into()]);
+        assert_eq!(out.verdict.status, VerdictStatus::Pass);
+        assert_eq!(out.findings.len(), 0);
+    }
+
+    #[test]
+    fn non_semver_constraint_mismatch_warns() {
+        let policy = PolicyConfig::default();
+        let reqs = vec![req("node", Some("lts/*"))];
+        let obs = vec![obs("node", true, Some("20.11.0"))];
+        let out = evaluate(&reqs, &obs, &policy, &[".tool-versions".into()]);
+        assert_eq!(out.verdict.status, VerdictStatus::Warn);
+        assert!(
+            out.findings
+                .iter()
+                .any(|f| f.code == codes::ENV_VERSION_MISMATCH)
+        );
+    }
+
+    #[test]
+    fn non_numeric_observation_version_mismatch_warns() {
+        let policy = PolicyConfig::default();
+        let reqs = vec![req("node", Some(">=20"))];
+        let obs = vec![obs("node", true, Some("node"))];
+        let out = evaluate(&reqs, &obs, &policy, &[".tool-versions".into()]);
+        assert_eq!(out.verdict.status, VerdictStatus::Warn);
+        assert!(
+            out.findings
+                .iter()
+                .any(|f| f.code == codes::ENV_VERSION_MISMATCH)
+        );
     }
 
     #[test]
@@ -1029,6 +1063,185 @@ mod tests {
         assert_eq!(out.verdict.counts.error, 2); // version mismatch + missing
     }
 
+    // ==================== Runtime and parse errors ====================
+
+    #[test]
+    fn runtime_error_emits_finding_and_reason() {
+        let policy = PolicyConfig {
+            profile: Profile::Team,
+            fail_on: FailOn::Error,
+            max_findings: Some(100),
+        };
+        let reqs = vec![req("node", None)];
+        let obs = vec![Observation {
+            tool: "node".to_string(),
+            present: true,
+            version: None,
+            hash_ok: None,
+            probe: ProbeRecord {
+                cmd: vec!["node".into(), "--version".into()],
+                exit: None,
+                stdout: "".into(),
+                stderr: "boom".into(),
+            },
+        }];
+        let out = evaluate(&reqs, &obs, &policy, &[".tool-versions".into()]);
+
+        assert!(
+            out.findings
+                .iter()
+                .any(|f| f.code == codes::TOOL_RUNTIME_ERROR)
+        );
+        assert!(out.verdict.reasons.contains(&"tool_error".to_string()));
+    }
+
+    #[test]
+    fn version_parse_failure_warns() {
+        let policy = PolicyConfig::default();
+        let reqs = vec![req("node", Some(">=20"))];
+        let obs = vec![Observation {
+            tool: "node".to_string(),
+            present: true,
+            version: Some(env_check_types::VersionObservation {
+                parsed: None,
+                raw: "node vX.Y".to_string(),
+            }),
+            hash_ok: None,
+            probe: ProbeRecord {
+                cmd: vec!["node".into(), "--version".into()],
+                exit: Some(0),
+                stdout: "node vX.Y".into(),
+                stderr: "".into(),
+            },
+        }];
+        let out = evaluate(&reqs, &obs, &policy, &[".tool-versions".into()]);
+
+        assert_eq!(out.verdict.status, VerdictStatus::Warn);
+        assert!(out.findings.iter().any(|f| {
+            f.code == codes::ENV_VERSION_MISMATCH && f.message.contains("Could not parse version")
+        }));
+    }
+
+    #[test]
+    fn rustup_toolchain_mismatch_emits_finding() {
+        let policy = PolicyConfig {
+            profile: Profile::Team,
+            fail_on: FailOn::Error,
+            max_findings: Some(100),
+        };
+        let reqs = vec![Requirement {
+            tool: "rust".to_string(),
+            constraint: Some("stable".to_string()),
+            required: true,
+            source: SourceRef {
+                kind: SourceKind::RustToolchain,
+                path: "rust-toolchain.toml".into(),
+            },
+            probe_kind: ProbeKind::RustupToolchain,
+            hash: None,
+        }];
+        let obs = vec![Observation {
+            tool: "rust".to_string(),
+            present: true,
+            version: Some(env_check_types::VersionObservation {
+                parsed: None,
+                raw: "1.75.0-x86_64-unknown-linux-gnu".into(),
+            }),
+            hash_ok: None,
+            probe: ProbeRecord {
+                cmd: vec!["rustup".into(), "toolchain".into(), "list".into()],
+                exit: Some(0),
+                stdout: "1.75.0-x86_64-unknown-linux-gnu".into(),
+                stderr: "".into(),
+            },
+        }];
+        let out = evaluate(&reqs, &obs, &policy, &["rust-toolchain.toml".into()]);
+
+        assert!(
+            out.findings
+                .iter()
+                .any(|f| f.code == codes::ENV_TOOLCHAIN_MISSING)
+        );
+    }
+
+    #[test]
+    fn file_hash_missing_emits_missing_tool() {
+        let policy = PolicyConfig::default();
+        let reqs = vec![Requirement {
+            tool: "file:scripts/tool.sh".to_string(),
+            constraint: None,
+            required: true,
+            source: SourceRef {
+                kind: SourceKind::HashManifest,
+                path: "scripts/tools.sha256".into(),
+            },
+            probe_kind: ProbeKind::FileHash,
+            hash: Some(env_check_types::HashSpec {
+                algo: env_check_types::HashAlgo::Sha256,
+                hex: "deadbeef".into(),
+                path: "scripts/tool.sh".into(),
+            }),
+        }];
+        let obs = vec![Observation {
+            tool: "file:scripts/tool.sh".to_string(),
+            present: false,
+            version: None,
+            hash_ok: None,
+            probe: ProbeRecord {
+                cmd: vec![],
+                exit: None,
+                stdout: "".into(),
+                stderr: "".into(),
+            },
+        }];
+        let out = evaluate(&reqs, &obs, &policy, &["scripts/tools.sha256".into()]);
+
+        assert!(
+            out.findings
+                .iter()
+                .any(|f| f.code == codes::ENV_MISSING_TOOL)
+        );
+    }
+
+    #[test]
+    fn file_hash_mismatch_emits_hash_mismatch() {
+        let policy = PolicyConfig::default();
+        let reqs = vec![Requirement {
+            tool: "file:scripts/tool.sh".to_string(),
+            constraint: None,
+            required: true,
+            source: SourceRef {
+                kind: SourceKind::HashManifest,
+                path: "scripts/tools.sha256".into(),
+            },
+            probe_kind: ProbeKind::FileHash,
+            hash: Some(env_check_types::HashSpec {
+                algo: env_check_types::HashAlgo::Sha256,
+                hex: "deadbeef".into(),
+                path: "scripts/tool.sh".into(),
+            }),
+        }];
+        let obs = vec![Observation {
+            tool: "file:scripts/tool.sh".to_string(),
+            present: true,
+            version: None,
+            hash_ok: Some(false),
+            probe: ProbeRecord {
+                cmd: vec!["sha256".into(), "scripts/tool.sh".into()],
+                exit: Some(0),
+                stdout: "".into(),
+                stderr: "".into(),
+            },
+        }];
+        let out = evaluate(&reqs, &obs, &policy, &["scripts/tools.sha256".into()]);
+
+        assert!(
+            out.findings
+                .iter()
+                .any(|f| f.code == codes::ENV_HASH_MISMATCH)
+        );
+    }
+
     // ==================== Edge cases ====================
 
     #[test]
@@ -1056,5 +1269,37 @@ mod tests {
         let obs = vec![obs("node", true, Some("20.11"))];
         let out = evaluate(&reqs, &obs, &policy, &[".tool-versions".into()]);
         assert_eq!(out.verdict.status, VerdictStatus::Pass);
+    }
+
+    #[test]
+    fn presence_only_constraints_skip_version_checks() {
+        let policy = PolicyConfig::default();
+        let constraints = ["latest", "system", "*", "default", "  latest  "];
+
+        for constraint in constraints {
+            let reqs = vec![req("node", Some(constraint))];
+            let obs = vec![obs("node", true, Some("0.1.0"))];
+            let out = evaluate(&reqs, &obs, &policy, &[".tool-versions".into()]);
+
+            assert!(
+                out.findings.is_empty(),
+                "expected no findings for presence-only constraint '{}'",
+                constraint
+            );
+            assert_eq!(out.verdict.status, VerdictStatus::Pass);
+        }
+    }
+
+    #[test]
+    fn satisfies_semverish_falls_back_to_exact_match() {
+        assert!(satisfies_semverish("v20", "v20"));
+        assert!(!satisfies_semverish("v20", "20"));
+        assert!(!satisfies_semverish("v20", "v21"));
+    }
+
+    #[test]
+    fn coerce_version_empty_string_is_none() {
+        assert!(coerce_version("").is_none());
+        assert!(coerce_version("   ").is_none());
     }
 }

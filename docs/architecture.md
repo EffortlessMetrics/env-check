@@ -4,14 +4,14 @@
 
 env-check is the **machine-truth** sensor in the cockpit ecosystem.
 
-It answers:
+It is designed for **Compliance Mode**: receipts are stable, deterministic, and cockpit-safe, with a clean separation between Ledger (`report.json`) and Laboratory (`extras/`).
 
-> “Is this machine/runner set up to work with the repo’s declared tool requirements?”
+## Project Posture
 
-It exists to keep other sensors honest:
-
-- **Repo truth sensors** must not depend on local installs or runner state.
-- **env-check** is the correct place for PATH/version/hash validation and onboarding friction.
+- **100% Test Coverage**: Enforced in CI for line coverage.
+- **Mutation Testing**: Targeted at core domain logic to ensure test quality.
+- **Conformance**: Built-in verification of schema compliance and determinism.
+- **Settings-as-Code**: Repository metadata is managed via `.github/settings.yml`.
 
 ## Truth layer boundary
 
@@ -78,9 +78,9 @@ If none exist, env-check should emit a **skip** receipt with reason `no_sources`
 ### Canonical artifact layout
 
 ```
-artifacts/env-check/report.json   # canonical receipt (required)
-artifacts/env-check/comment.md    # optional markdown summary
-artifacts/env-check/raw.log       # optional probe transcript (debugging)
+artifacts/env-check/report.json        # canonical receipt (required)
+artifacts/env-check/comment.md         # optional markdown summary
+artifacts/env-check/extras/raw.log     # optional probe transcript (debugging)
 ```
 
 ### Receipt contract
@@ -146,4 +146,4 @@ env-check executes external commands as part of probing. Constraints:
 
 - Commands are fixed argv vectors (no shell parsing).
 - Probes are allowlisted by tool name (no “run arbitrary command from config” in v0.1).
-- The probe transcript (`raw.log`) should redact obvious secrets (future enhancement).
+- The probe transcript (`extras/raw.log`) should redact obvious secrets (future enhancement).

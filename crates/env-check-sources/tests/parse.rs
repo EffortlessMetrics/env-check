@@ -1,13 +1,13 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use env_check_sources::{
-    parse_all, parse_go_mod, parse_go_mod_str, parse_hash_manifest, parse_mise_toml,
-    parse_mise_toml_str, parse_node_version, parse_node_version_str, parse_nvmrc, parse_nvmrc_str,
-    parse_package_json, parse_package_json_str, parse_pyproject_toml, parse_pyproject_toml_str,
-    parse_python_version, parse_python_version_str, parse_rust_toolchain, parse_tool_versions,
-    parse_tool_versions_str,
+    parse_all, parse_go_mod, parse_go_mod_str, parse_hash_manifest, parse_hash_manifest_str,
+    parse_mise_toml, parse_mise_toml_str, parse_node_version, parse_node_version_str, parse_nvmrc,
+    parse_nvmrc_str, parse_package_json, parse_package_json_str, parse_pyproject_toml,
+    parse_pyproject_toml_str, parse_python_version, parse_python_version_str, parse_rust_toolchain,
+    parse_tool_versions, parse_tool_versions_str,
 };
-use env_check_types::{ProbeKind, SourceKind};
+use env_check_types::{ProbeKind, SourceKind, codes};
 
 // =============================================================================
 // Tool versions tests
@@ -191,6 +191,24 @@ fn mise_array_version_takes_first() {
     let path = root.join(".mise.toml");
     let reqs = parse_mise_toml_str(root, &path, "[tools]\nnode = [\"20\", \"18\"]").unwrap();
     assert_eq!(reqs[0].constraint, Some("20".to_string()));
+}
+
+#[test]
+fn mise_array_non_string_first_results_in_none_constraint() {
+    let root = Path::new("/fake");
+    let path = root.join(".mise.toml");
+    let reqs = parse_mise_toml_str(root, &path, "[tools]\nnode = [1, \"20\"]").unwrap();
+    assert_eq!(reqs.len(), 1);
+    assert_eq!(reqs[0].constraint, None);
+}
+
+#[test]
+fn mise_boolean_value_results_in_none_constraint() {
+    let root = Path::new("/fake");
+    let path = root.join(".mise.toml");
+    let reqs = parse_mise_toml_str(root, &path, "[tools]\nnode = true").unwrap();
+    assert_eq!(reqs.len(), 1);
+    assert_eq!(reqs[0].constraint, None);
 }
 
 #[test]
@@ -405,6 +423,46 @@ fn hash_manifest_tool_name_is_file_prefixed() {
     assert_eq!(reqs[0].tool, "file:scripts/mytool.sh");
 }
 
+#[test]
+fn hash_manifest_skips_comments_and_blank_lines() {
+    let root = Path::new("/fake");
+    let path = root.join("tools.sha256");
+    let text = "# comment\n\nabc123  scripts/tool.sh\n# trailing comment\n";
+    let reqs = parse_hash_manifest_str(root, &path, text).unwrap();
+    assert_eq!(reqs.len(), 1);
+    assert_eq!(reqs[0].tool, "file:scripts/tool.sh");
+}
+
+#[test]
+fn hash_manifest_rejects_absolute_unix_path() {
+    let root = Path::new("/fake");
+    let path = root.join("tools.sha256");
+    let result = parse_hash_manifest_str(root, &path, "abc123 /etc/passwd");
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(err_msg.contains("repo-relative"));
+}
+
+#[test]
+fn hash_manifest_rejects_windows_path() {
+    let root = Path::new("/fake");
+    let path = root.join("tools.sha256");
+    let result = parse_hash_manifest_str(root, &path, "abc123 C:\\tools\\bin.exe");
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(err_msg.contains("repo-relative"));
+}
+
+#[test]
+fn hash_manifest_missing_path_is_error() {
+    let root = Path::new("/fake");
+    let path = root.join("tools.sha256");
+    let result = parse_hash_manifest_str(root, &path, "abc123");
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(err_msg.contains("missing path"));
+}
+
 // =============================================================================
 // parse_all tests
 // =============================================================================
@@ -470,7 +528,7 @@ fn parse_all_records_parse_errors_as_findings() {
 #[test]
 fn parse_all_includes_hash_manifests() {
     let root = Path::new("tests/fixtures/hash_manifest");
-    let hash_manifests = vec![std::path::PathBuf::from("scripts/tools.sha256")];
+    let hash_manifests = vec![PathBuf::from("scripts/tools.sha256")];
     let parsed = parse_all(root, &hash_manifests);
     assert!(
         parsed
@@ -489,11 +547,34 @@ fn parse_all_includes_hash_manifests() {
 #[test]
 fn parse_all_skips_nonexistent_hash_manifest() {
     let tmp = tempfile::tempdir().unwrap();
-    let hash_manifests = vec![std::path::PathBuf::from("nonexistent.sha256")];
+    let hash_manifests = vec![PathBuf::from("nonexistent.sha256")];
     let parsed = parse_all(tmp.path(), &hash_manifests);
     // Should not error, just skip the manifest
     assert!(parsed.sources_used.is_empty());
     assert!(parsed.requirements.is_empty());
+}
+
+#[test]
+fn parse_all_hash_manifest_parse_error_emits_finding() {
+    let tmp = tempfile::tempdir().unwrap();
+    let scripts_dir = tmp.path().join("scripts");
+    std::fs::create_dir_all(&scripts_dir).unwrap();
+    std::fs::write(scripts_dir.join("tools.sha256"), "deadbeef /etc/passwd\n").unwrap();
+
+    let parsed = parse_all(tmp.path(), &[PathBuf::from("scripts/tools.sha256")]);
+    assert_eq!(parsed.findings.len(), 1);
+    let finding = &parsed.findings[0];
+    assert_eq!(finding.code, codes::ENV_SOURCE_PARSE_ERROR);
+    assert_eq!(
+        finding.location.as_ref().map(|l| l.path.as_str()),
+        Some("scripts/tools.sha256")
+    );
+    assert!(
+        parsed
+            .sources_used
+            .iter()
+            .any(|s| s.path == "scripts/tools.sha256")
+    );
 }
 
 #[test]

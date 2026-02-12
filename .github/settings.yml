@@ -1,0 +1,7 @@
+# .github/settings.yml
+# This file is synced to GitHub settings by the "Settings" Probot app.
+
+repository:
+  description: "Machine-truth preflight: validate local tools/toolchains against repo declarations."
+  homepage: "https://github.com/EffortlessMetrics/env-check"
+  topics: rust, ci, devops, toolchain, validation, github-actions, cockpit-sensor

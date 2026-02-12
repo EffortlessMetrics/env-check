@@ -76,3 +76,4 @@ targets = [
 ]
 tag-namespace = "v"
 pr-run-mode = "plan"
+allow-dirty = ["ci"]

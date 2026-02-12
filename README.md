@@ -39,14 +39,27 @@ env-check will attempt to read any of these if present:
 
 If none exist, env-check emits a **skip** receipt (it does not fail a random repo).
 
+## Project Status
+
+- **Compliance**: Fully compliant with `sensor.report.v1`.
+- **Quality**: 100% line coverage enforced in CI.
+- **Automation**: Repository settings managed via [Settings-as-Code](.github/settings.yml).
+
+## Documentation
+
+- [Architecture](docs/architecture.md)
+- [Testing Strategy](docs/testing.md)
+- [Contracts & Schemas](docs/contracts.md)
+- [Design Principles](docs/design.md)
+
 ## Outputs (artifacts)
 
 Canonical output paths:
 
 ```
-artifacts/env-check/report.json    # required (receipt envelope)
-artifacts/env-check/comment.md     # optional (PR-friendly summary)
-artifacts/env-check/raw.log        # optional (probe transcript)
+artifacts/env-check/report.json        # required (receipt envelope)
+artifacts/env-check/comment.md         # optional (PR-friendly summary)
+artifacts/env-check/extras/raw.log     # optional (probe transcript)
 ```
 
 ## Install

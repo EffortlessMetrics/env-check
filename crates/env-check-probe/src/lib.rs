@@ -540,6 +540,22 @@ mod tests {
     use env_check_types::{HashAlgo, HashSpec, ProbeKind, Requirement, SourceKind, SourceRef};
     use proptest::prelude::*;
 
+    struct ErrCommandRunner;
+
+    impl CommandRunner for ErrCommandRunner {
+        fn run(&self, _cwd: &Path, _argv: &[String]) -> Result<CmdOutput, EnvCheckError> {
+            Err(EnvCheckError::Runtime("boom".into()))
+        }
+    }
+
+    struct ErrHasher;
+
+    impl Hasher for ErrHasher {
+        fn sha256_hex(&self, _path: &Path) -> Result<String, EnvCheckError> {
+            Err(EnvCheckError::Io("missing file".into()))
+        }
+    }
+
     fn make_req(tool: &str, probe_kind: ProbeKind) -> Requirement {
         Requirement {
             tool: tool.to_string(),
@@ -605,6 +621,22 @@ mod tests {
             obs.version.as_ref().unwrap().parsed,
             Some("20.11.0".to_string())
         );
+    }
+
+    #[test]
+    fn probe_path_tool_runner_error_records_stderr() {
+        let path_resolver = FakePathResolver::new(["node"]);
+        let cmd_runner = ErrCommandRunner;
+        let hasher = FakeHasher::new();
+
+        let prober = Prober::new(cmd_runner, path_resolver, hasher).unwrap();
+        let req = make_req("node", ProbeKind::PathTool);
+        let obs = prober.probe(Path::new("/repo"), &req);
+
+        assert!(obs.present);
+        assert!(obs.version.is_some());
+        assert!(obs.probe.stderr.contains("runtime error"));
+        assert_eq!(obs.probe.exit, None);
     }
 
     #[test]
@@ -699,6 +731,25 @@ mod tests {
         let obs = prober.probe(Path::new("/repo"), &req);
 
         assert!(!obs.present);
+    }
+
+    #[test]
+    fn probe_rustup_toolchain_runner_error_records_stderr() {
+        let path_resolver = FakePathResolver::new(["rustup"]);
+        let cmd_runner = ErrCommandRunner;
+        let hasher = FakeHasher::new();
+
+        let prober = Prober::new(cmd_runner, path_resolver, hasher).unwrap();
+        let mut req = make_req("rust", ProbeKind::RustupToolchain);
+        req.constraint = Some("stable".to_string());
+        let obs = prober.probe(Path::new("/repo"), &req);
+
+        assert!(obs.present);
+        assert!(obs.probe.stderr.contains("runtime error"));
+        assert_eq!(
+            obs.version.as_ref().unwrap().parsed.as_deref(),
+            Some("stable")
+        );
     }
 
     #[test]
@@ -799,6 +850,56 @@ mod tests {
 
         assert!(!obs.present);
         assert_eq!(obs.hash_ok, Some(false));
+    }
+
+    #[test]
+    fn probe_file_hash_hasher_error_sets_hash_ok_none() {
+        use std::io::Write;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let scripts_dir = temp_dir.path().join("scripts");
+        std::fs::create_dir_all(&scripts_dir).unwrap();
+
+        let file_path = scripts_dir.join("tool.sh");
+        let mut file = std::fs::File::create(&file_path).unwrap();
+        file.write_all(b"#!/bin/bash\necho hello").unwrap();
+
+        let path_resolver = FakePathResolver::new(Vec::<String>::new());
+        let cmd_runner = FakeCommandRunner::new();
+        let hasher = ErrHasher;
+
+        let prober = Prober::new(cmd_runner, path_resolver, hasher).unwrap();
+        let req = make_hash_req("file:scripts/tool.sh", "scripts/tool.sh", "abc123");
+        let obs = prober.probe(temp_dir.path(), &req);
+
+        assert!(obs.present);
+        assert!(obs.hash_ok.is_none());
+        assert!(obs.probe.stderr.contains("io error"));
+    }
+
+    #[test]
+    fn probe_file_hash_without_hash_spec_returns_missing() {
+        let path_resolver = FakePathResolver::new(Vec::<String>::new());
+        let cmd_runner = FakeCommandRunner::new();
+        let hasher = FakeHasher::new();
+
+        let prober = Prober::new(cmd_runner, path_resolver, hasher).unwrap();
+        let req = Requirement {
+            tool: "file:scripts/tool.sh".to_string(),
+            constraint: None,
+            required: true,
+            source: SourceRef {
+                kind: SourceKind::HashManifest,
+                path: "scripts/tools.sha256".to_string(),
+            },
+            probe_kind: ProbeKind::FileHash,
+            hash: None,
+        };
+        let obs = prober.probe(Path::new("/repo"), &req);
+
+        assert!(!obs.present);
+        assert!(obs.hash_ok.is_none());
+        assert!(obs.probe.cmd.is_empty());
     }
 
     proptest! {
@@ -911,6 +1012,19 @@ mod tests {
     }
 
     #[test]
+    fn logging_runner_logs_runtime_error() {
+        let inner = ErrCommandRunner;
+        let writer = TestLogWriter::new();
+        let runner = LoggingCommandRunner::new(inner, &writer);
+
+        let result = runner.run(Path::new("/repo"), &["tool".to_string()]);
+
+        assert!(result.is_err());
+        let lines = writer.get_lines();
+        assert!(lines.iter().any(|l| l.contains("error:")));
+    }
+
+    #[test]
     fn logging_runner_truncates_long_output() {
         // Test the truncate_for_log function directly
         let short = "short output";
@@ -953,6 +1067,22 @@ mod tests {
         assert_eq!(result.exit, Some(42));
         assert_eq!(result.stdout, "stdout content");
         assert_eq!(result.stderr, "stderr content");
+    }
+
+    #[test]
+    fn file_log_writer_creates_parent_and_writes_lines() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let log_path = temp_dir.path().join("nested").join("raw.log");
+
+        let writer = FileLogWriter::new(&log_path).expect("create log writer");
+        writer.write_line("line 1");
+        writer.write_line("line 2");
+        writer.flush();
+
+        assert!(log_path.exists());
+        let content = std::fs::read_to_string(&log_path).expect("read log");
+        assert!(content.contains("line 1"));
+        assert!(content.contains("line 2"));
     }
 
     // =========================================================================

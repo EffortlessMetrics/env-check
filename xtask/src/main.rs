@@ -731,3 +731,223 @@ fn normalize_for_comparison(path: &Path) -> anyhow::Result<serde_json::Value> {
 
     Ok(json)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_dir(prefix: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("env-check-xtask-{prefix}-{unique}"));
+        fs::create_dir_all(&dir).expect("create temp dir");
+        dir
+    }
+
+    #[test]
+    fn load_schema_json_reads_valid_json() {
+        let root = temp_dir("schema-json");
+        let path = root.join("schema.json");
+        fs::write(&path, r#"{ "type": "object" }"#).expect("write schema");
+
+        let value = load_schema_json(path.to_str().unwrap()).expect("load schema");
+        assert_eq!(value.get("type").and_then(|v| v.as_str()), Some("object"));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn validate_fixture_accepts_env_check_schema() {
+        let root = temp_dir("fixture-ok");
+        let path = root.join("report.json");
+        fs::write(
+            &path,
+            serde_json::to_string_pretty(&json!({
+                "schema": "sensor.report.v1",
+                "tool": { "name": "env-check" }
+            }))
+            .unwrap(),
+        )
+        .expect("write report");
+
+        let schema = jsonschema::validator_for(&json!({"type": "object"})).unwrap();
+        validate_fixture(&path, &schema).expect("validate fixture");
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn validate_fixture_rejects_wrong_tool_name() {
+        let root = temp_dir("fixture-bad-tool");
+        let path = root.join("report.json");
+        fs::write(
+            &path,
+            serde_json::to_string_pretty(&json!({
+                "schema": "sensor.report.v1",
+                "tool": { "name": "not-env-check" }
+            }))
+            .unwrap(),
+        )
+        .expect("write report");
+
+        let schema = jsonschema::validator_for(&json!({"type": "object"})).unwrap();
+        let err = validate_fixture(&path, &schema).unwrap_err().to_string();
+        assert!(err.contains("tool.name"));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn validate_report_against_schema_fails_on_missing_field() {
+        let root = temp_dir("schema-validate");
+        let report = root.join("report.json");
+        fs::write(&report, serde_json::to_string_pretty(&json!({})).unwrap())
+            .expect("write report");
+
+        let schema = jsonschema::validator_for(&json!({
+            "type": "object",
+            "required": ["schema"],
+            "properties": { "schema": { "const": "sensor.report.v1" } }
+        }))
+        .unwrap();
+
+        let err = validate_report_against_schema(&report, &schema)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("schema validation failed"));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn validate_report_against_schema_accepts_valid_report() {
+        let root = temp_dir("schema-validate-ok");
+        let report = root.join("report.json");
+        fs::write(
+            &report,
+            serde_json::to_string_pretty(&json!({"schema": "sensor.report.v1"})).unwrap(),
+        )
+        .expect("write report");
+
+        let schema = jsonschema::validator_for(&json!({
+            "type": "object",
+            "required": ["schema"],
+            "properties": { "schema": { "const": "sensor.report.v1" } }
+        }))
+        .unwrap();
+
+        validate_report_against_schema(&report, &schema).expect("schema validation");
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn verify_contains_finding_ok_and_err() {
+        let root = temp_dir("finding-check");
+        let report = root.join("report.json");
+        fs::write(
+            &report,
+            serde_json::to_string_pretty(&json!({
+                "findings": [
+                    { "code": "env.missing_tool" },
+                    { "code": "env.version_mismatch" }
+                ]
+            }))
+            .unwrap(),
+        )
+        .expect("write report");
+
+        verify_contains_finding(&report, "env.missing_tool").expect("finding present");
+        let err = verify_contains_finding(&report, "tool.runtime_error")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("expected finding code"));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn verify_verdict_status_ok_and_err() {
+        let root = temp_dir("verdict-check");
+        let report = root.join("report.json");
+        fs::write(
+            &report,
+            serde_json::to_string_pretty(&json!({
+                "verdict": { "status": "pass" }
+            }))
+            .unwrap(),
+        )
+        .expect("write report");
+
+        verify_verdict_status(&report, "pass").expect("status matches");
+        let err = verify_verdict_status(&report, "fail")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("expected verdict status"));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn normalize_for_comparison_removes_run_timestamps() {
+        let root = temp_dir("normalize");
+        let report = root.join("report.json");
+        fs::write(
+            &report,
+            serde_json::to_string_pretty(&json!({
+                "run": {
+                    "started_at": "2024-01-01T00:00:00Z",
+                    "ended_at": "2024-01-01T00:00:01Z",
+                    "duration_ms": 1000,
+                    "other": "keep"
+                }
+            }))
+            .unwrap(),
+        )
+        .expect("write report");
+
+        let normalized = normalize_for_comparison(&report).expect("normalize");
+        let run = normalized.get("run").and_then(|v| v.as_object()).unwrap();
+        assert!(run.get("started_at").is_none());
+        assert!(run.get("ended_at").is_none());
+        assert!(run.get("duration_ms").is_none());
+        assert_eq!(run.get("other").and_then(|v| v.as_str()), Some("keep"));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn validate_all_fixtures_only_checks_json_files() {
+        let root = temp_dir("fixtures");
+        let json_path = root.join("ok.json");
+        let txt_path = root.join("ignore.txt");
+        fs::write(
+            &json_path,
+            serde_json::to_string_pretty(&json!({"schema": "ok"})).unwrap(),
+        )
+        .expect("write json");
+        fs::write(&txt_path, "ignore").expect("write txt");
+
+        let schema = jsonschema::validator_for(&json!({"type": "object"})).unwrap();
+        validate_all_fixtures(&root, &schema).expect("validate fixtures");
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn create_conform_fixtures_writes_expected_structure() {
+        let root = temp_dir("conform");
+        create_conform_fixtures(&root).expect("create fixtures");
+
+        assert!(root.join("pass_basic").join(".tool-versions").exists());
+        assert!(root.join("fail_missing").join(".tool-versions").exists());
+        assert!(root.join("no_sources").join(".gitkeep").exists());
+        assert!(root.join("error_recovery").join("env-check.toml").exists());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+}
