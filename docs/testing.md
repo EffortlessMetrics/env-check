@@ -33,6 +33,22 @@ env-check is a gatekeeper tool. The test posture is intentionally heavy.
 - Treat "mutant survived" as a reason to add a test, not as a debate.
 - Run via `cargo run -p xtask -- mutants`
 
+### Coverage (cargo-llvm-cov)
+- **Gate:** 100% line coverage for the workspace.
+- Enforced in CI on Linux.
+- Run locally:
+  ```bash
+  cargo llvm-cov --all --fail-under-lines 100
+  ```
+
+### Conformance (xtask conform)
+- Ensures deterministic output and schema compliance.
+- Validates that the tool produces a valid receipt even on runtime errors (survivability).
+- Run locally:
+  ```bash
+  cargo run -p xtask -- conform
+  ```
+
 ## Running tests locally
 
 ```bash

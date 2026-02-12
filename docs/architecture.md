@@ -4,14 +4,14 @@
 
 env-check is the **machine-truth** sensor in the cockpit ecosystem.
 
-It answers:
+It is designed for **Compliance Mode**: receipts are stable, deterministic, and cockpit-safe, with a clean separation between Ledger (`report.json`) and Laboratory (`extras/`).
 
-> “Is this machine/runner set up to work with the repo’s declared tool requirements?”
+## Project Posture
 
-It exists to keep other sensors honest:
-
-- **Repo truth sensors** must not depend on local installs or runner state.
-- **env-check** is the correct place for PATH/version/hash validation and onboarding friction.
+- **100% Test Coverage**: Enforced in CI for line coverage.
+- **Mutation Testing**: Targeted at core domain logic to ensure test quality.
+- **Conformance**: Built-in verification of schema compliance and determinism.
+- **Settings-as-Code**: Repository metadata is managed via `.github/settings.yml`.
 
 ## Truth layer boundary
 

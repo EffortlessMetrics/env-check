@@ -11,7 +11,19 @@ All receipts conform to `sensor.report.v1`:
 - `run` — timestamps + (optional) host/ci/git metadata
 - `verdict` — `{ status, counts, reasons[] }`
 - `findings[]` — stable codes, human messages, best-effort locations
+- `artifacts[]` — relative pointers to depth artifacts (laboratory)
 - `data` — tool-specific extension point (structured; schema-defined per tool)
+
+## Capabilities ("No Green By Omission")
+
+Reports include a `run.capabilities` object to distinguish between passing checks and skipped checks:
+
+- `git`: Was git metadata detected?
+- `baseline`: Was comparison performed?
+- `inputs`: Were source files discovered?
+- `engine`: Did the probe engine run?
+
+Status values: `available`, `unavailable`, `skipped`.
 
 See: `schemas/sensor.report.v1.schema.json`.
 
