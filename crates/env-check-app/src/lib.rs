@@ -3,12 +3,13 @@
 //! This crate wires sources + probes + domain evaluation and writes artifacts.
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::Context;
-pub use env_check_config::{AppConfig, SourcesConfig, load_config};
+pub use env_check_config::{AppConfig, SourcesConfig, load_config, DEFAULT_PROBE_TIMEOUT_SECS};
 use env_check_probe::{
     Clock, FileLogWriter, LoggingCommandRunner, OsCommandRunner, OsPathResolver, Prober,
-    Sha256Hasher, SystemClock,
+    Sha256Hasher, SystemClock, DEFAULT_PROBE_TIMEOUT_SECS,
 };
 use env_check_reporting::{build_capabilities, build_data};
 pub use env_check_runtime::write_atomic;
@@ -25,11 +26,23 @@ pub struct CheckOutput {
 }
 
 /// Options for running env-check with additional configuration.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct CheckOptions {
     /// Optional path to write debug log output.
     /// This is a side artifact and does NOT affect receipt determinism.
     pub debug_log_path: Option<PathBuf>,
+    /// Timeout in seconds for individual tool probing operations.
+    /// Defaults to 30 seconds if not specified.
+    pub probe_timeout_secs: u64,
+}
+
+impl Default for CheckOptions {
+    fn default() -> Self {
+        Self {
+            debug_log_path: None,
+            probe_timeout_secs: env_check_config::DEFAULT_PROBE_TIMEOUT_SECS,
+        }
+    }
 }
 
 /// Run env-check end-to-end (backwards compatible wrapper).
@@ -156,18 +169,29 @@ fn probe_requirements(
     requirements: &[Requirement],
     options: &CheckOptions,
 ) -> anyhow::Result<Vec<Observation>> {
+    let timeout = Duration::from_secs(options.probe_timeout_secs);
     if let Some(log_path) = &options.debug_log_path {
         // Use logging command runner
         let log_writer = FileLogWriter::new(log_path)
             .with_context(|| format!("create debug log at {}", log_path.display()))?;
         let logging_runner = LoggingCommandRunner::new(OsCommandRunner, log_writer);
-        let prober =
-            Prober::new(logging_runner, OsPathResolver, Sha256Hasher).context("init prober")?;
+        let prober = Prober::with_timeout(
+            logging_runner,
+            OsPathResolver,
+            Sha256Hasher,
+            timeout,
+        )
+        .context("init prober")?;
         Ok(requirements.iter().map(|r| prober.probe(root, r)).collect())
     } else {
         // Use regular command runner (no logging)
-        let prober =
-            Prober::new(OsCommandRunner, OsPathResolver, Sha256Hasher).context("init prober")?;
+        let prober = Prober::with_timeout(
+            OsCommandRunner,
+            OsPathResolver,
+            Sha256Hasher,
+            timeout,
+        )
+        .context("init prober")?;
         Ok(requirements.iter().map(|r| prober.probe(root, r)).collect())
     }
 }

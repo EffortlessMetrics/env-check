@@ -8,6 +8,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{LazyLock, Mutex};
+use std::time::Duration;
 
 use anyhow::Context;
 use env_check_types::{
@@ -16,7 +17,7 @@ use env_check_types::{
 use regex::Regex;
 
 pub trait CommandRunner: Send + Sync {
-    fn run(&self, cwd: &Path, argv: &[String]) -> Result<CmdOutput, EnvCheckError>;
+    fn run(&self, cwd: &Path, argv: &[String], timeout: Duration) -> Result<CmdOutput, EnvCheckError>;
 }
 
 #[derive(Debug, Clone)]
@@ -29,7 +30,7 @@ pub struct CmdOutput {
 pub struct OsCommandRunner;
 
 impl CommandRunner for OsCommandRunner {
-    fn run(&self, cwd: &Path, argv: &[String]) -> Result<CmdOutput, EnvCheckError> {
+    fn run(&self, cwd: &Path, argv: &[String], timeout: Duration) -> Result<CmdOutput, EnvCheckError> {
         if argv.is_empty() {
             return Err(EnvCheckError::Runtime("empty argv".into()));
         }
@@ -38,14 +39,35 @@ impl CommandRunner for OsCommandRunner {
         cmd.args(&argv[1..]);
         cmd.current_dir(cwd);
 
-        let out = cmd
-            .output()
+        let mut child = cmd
+            .spawn()
             .map_err(|e| EnvCheckError::Runtime(e.to_string()))?;
-        Ok(CmdOutput {
-            exit: out.status.code(),
-            stdout: String::from_utf8_lossy(&out.stdout).to_string(),
-            stderr: String::from_utf8_lossy(&out.stderr).to_string(),
-        })
+
+        match wait_timeout::ChildExt::wait_timeout(&mut child, timeout) {
+            Ok(Some(status)) => {
+                // Process exited within timeout
+                let output = child.wait_with_output()
+                    .map_err(|e| EnvCheckError::Runtime(e.to_string()))?;
+                Ok(CmdOutput {
+                    exit: output.status.code(),
+                    stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+                    stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+                })
+            }
+            Ok(None) => {
+                // Timeout occurred - kill the process
+                let _ = child.kill();
+                let _ = child.wait();
+                Err(EnvCheckError::Runtime(format!(
+                    "command timed out after {}s: {}",
+                    timeout.as_secs(),
+                    argv.join(" ")
+                )))
+            }
+            Err(e) => {
+                Err(EnvCheckError::Runtime(e.to_string()))
+            }
+        }
     }
 }
 
@@ -94,16 +116,26 @@ impl Clock for SystemClock {
     }
 }
 
+/// Default probe timeout in seconds.
+pub const DEFAULT_PROBE_TIMEOUT_SECS: u64 = 30;
+
 #[derive(Clone)]
 pub struct Prober<R: CommandRunner, P: PathResolver, H: Hasher> {
     runner: R,
     path: P,
     hasher: H,
     version_re: Regex,
+    timeout: Duration,
 }
 
 impl<R: CommandRunner, P: PathResolver, H: Hasher> Prober<R, P, H> {
+    /// Create a new Prober with default timeout (30 seconds).
     pub fn new(runner: R, path: P, hasher: H) -> anyhow::Result<Self> {
+        Self::with_timeout(runner, path, hasher, Duration::from_secs(DEFAULT_PROBE_TIMEOUT_SECS))
+    }
+
+    /// Create a new Prober with a custom timeout.
+    pub fn with_timeout(runner: R, path: P, hasher: H, timeout: Duration) -> anyhow::Result<Self> {
         // Conservative semver-ish matcher. We intentionally don't parse prerelease/build.
         let version_re =
             Regex::new(r"(\d+)(?:\.(\d+))?(?:\.(\d+))?").context("compile version regex")?;
@@ -112,6 +144,7 @@ impl<R: CommandRunner, P: PathResolver, H: Hasher> Prober<R, P, H> {
             path,
             hasher,
             version_re,
+            timeout,
         })
     }
 
@@ -135,7 +168,7 @@ impl<R: CommandRunner, P: PathResolver, H: Hasher> Prober<R, P, H> {
         let version = if present {
             let argv = vec![req.tool.clone(), "--version".to_string()];
             record.cmd = argv.clone();
-            match self.runner.run(root, &argv) {
+            match self.runner.run(root, &argv, self.timeout) {
                 Ok(out) => {
                     record.exit = out.exit;
                     record.stdout = out.stdout.clone();
@@ -184,7 +217,7 @@ impl<R: CommandRunner, P: PathResolver, H: Hasher> Prober<R, P, H> {
         };
 
         let version = if present {
-            match self.runner.run(root, &argv) {
+            match self.runner.run(root, &argv, self.timeout) {
                 Ok(out) => {
                     record.exit = out.exit;
                     record.stdout = out.stdout.clone();
@@ -347,15 +380,16 @@ impl<R: CommandRunner, W: DebugLogWriter> LoggingCommandRunner<R, W> {
 }
 
 impl<R: CommandRunner, W: DebugLogWriter> CommandRunner for LoggingCommandRunner<R, W> {
-    fn run(&self, cwd: &Path, argv: &[String]) -> Result<CmdOutput, EnvCheckError> {
+    fn run(&self, cwd: &Path, argv: &[String], timeout: Duration) -> Result<CmdOutput, EnvCheckError> {
         let timestamp = chrono::Utc::now().to_rfc3339();
         let cmd_str = redact_sensitive(&argv.join(" "));
 
         self.writer
             .write_line(&format!("[{}] EXEC: {}", timestamp, cmd_str));
         self.writer.write_line(&format!("  cwd: {}", cwd.display()));
+        self.writer.write_line(&format!("  timeout: {}s", timeout.as_secs()));
 
-        let result = self.inner.run(cwd, argv);
+        let result = self.inner.run(cwd, argv, timeout);
 
         match &result {
             Ok(output) => {
@@ -491,7 +525,7 @@ pub mod fakes {
     }
 
     impl CommandRunner for FakeCommandRunner {
-        fn run(&self, _cwd: &Path, argv: &[String]) -> Result<CmdOutput, EnvCheckError> {
+        fn run(&self, _cwd: &Path, argv: &[String], _timeout: Duration) -> Result<CmdOutput, EnvCheckError> {
             if argv.is_empty() {
                 return Err(EnvCheckError::Runtime("empty argv".into()));
             }
@@ -581,7 +615,7 @@ mod tests {
     struct ErrCommandRunner;
 
     impl CommandRunner for ErrCommandRunner {
-        fn run(&self, _cwd: &Path, _argv: &[String]) -> Result<CmdOutput, EnvCheckError> {
+        fn run(&self, _cwd: &Path, _argv: &[String], _timeout: Duration) -> Result<CmdOutput, EnvCheckError> {
             Err(EnvCheckError::Runtime("boom".into()))
         }
     }

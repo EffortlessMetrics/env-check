@@ -640,6 +640,525 @@ Check `artifacts/env-check/extras/raw.log` for details on exit code 1.
 
 ---
 
+---
+
+## Cross-Platform Considerations
+
+### Platform-Specific Behavior
+
+env-check behaves consistently across platforms, but there are some considerations:
+
+| Platform | Path Separator | Shell | Notes |
+|----------|---------------|-------|-------|
+| Linux | `/` | bash/zsh | Full support |
+| macOS | `/` | bash/zsh | Full support |
+| Windows | `\` | PowerShell/cmd | Full support, use PowerShell for best results |
+
+### Windows-Specific Notes
+
+```yaml
+# GitHub Actions - Windows
+jobs:
+  env-check-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: env-check
+        uses: EffortlessMetrics/env-check@v0.1.0
+        with:
+          profile: oss
+```
+
+### macOS-Specific Notes
+
+```yaml
+# GitHub Actions - macOS
+jobs:
+  env-check-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: env-check
+        uses: EffortlessMetrics/env-check@v0.1.0
+        with:
+          profile: oss
+```
+
+---
+
+## Matrix Builds
+
+### Multi-Platform Matrix
+
+Test across multiple platforms and tool versions:
+
+```yaml
+# GitHub Actions - Multi-platform matrix
+name: env-check-matrix
+
+on: [push, pull_request]
+
+jobs:
+  env-check:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        profile: [oss, team]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: env-check
+        uses: EffortlessMetrics/env-check@v0.1.0
+        with:
+          profile: ${{ matrix.profile }}
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: env-check-${{ matrix.os }}-${{ matrix.profile }}
+          path: artifacts/env-check
+```
+
+### Tool Version Matrix
+
+Test with multiple versions of a tool:
+
+```yaml
+# GitHub Actions - Node.js version matrix
+name: env-check-node-matrix
+
+on: [push, pull_request]
+
+jobs:
+  env-check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: env-check
+        uses: EffortlessMetrics/env-check@v0.1.0
+        with:
+          profile: team
+```
+
+---
+
+## Advanced Workflow Patterns
+
+### PR Validation with Required Status Checks
+
+```yaml
+# GitHub Actions - PR validation with required status checks
+name: pr-validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  env-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: env-check
+        id: env-check
+        uses: EffortlessMetrics/env-check@v0.1.0
+        with:
+          profile: team
+          fail_on: error
+
+      - name: Comment on PR
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = JSON.parse(fs.readFileSync('artifacts/env-check/report.json', 'utf8'));
+            const verdict = report.verdict.status;
+            const counts = report.verdict.counts;
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `## env-check Results\n\n**Status:** ${verdict}\n\n**Counts:**\n- Errors: ${counts.error}\n- Warnings: ${counts.warn}\n- Info: ${counts.info}\n`
+            });
+```
+
+### Scheduled Runs with Slack Notification
+
+```yaml
+# GitHub Actions - Scheduled validation with Slack notification
+name: scheduled-env-check
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # Every Monday at 6 AM UTC
+  workflow_dispatch:
+
+jobs:
+  env-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: env-check
+        uses: EffortlessMetrics/env-check@v0.1.0
+        with:
+          profile: strict
+          debug: true
+
+      - name: Notify Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "env-check failed in scheduled run",
+              "attachments": [
+                {
+                  "color": "danger",
+                  "fields": [
+                    {
+                      "title": "Repository",
+                      "value": "${{ github.repository }}",
+                      "short": true
+                    },
+                    {
+                      "title": "Run ID",
+                      "value": "${{ github.run_id }}",
+                      "short": true
+                    }
+                  ]
+                }
+              ]
+            }
+```
+
+### Conditional Tool Installation
+
+```yaml
+# GitHub Actions - Install tools conditionally
+name: conditional-tools
+
+on: [push, pull_request]
+
+jobs:
+  env-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read required Node.js version
+        id: node-version
+        run: |
+          if [ -f ".node-version" ]; then
+            echo "version=$(cat .node-version)" >> $GITHUB_OUTPUT
+          else
+            echo "version=20" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.node-version.outputs.version }}
+
+      - name: env-check
+        uses: EffortlessMetrics/env-check@v0.1.0
+```
+
+---
+
+## Integration with Version Managers
+
+### Using with asdf
+
+```yaml
+# GitHub Actions - with asdf
+jobs:
+  env-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup asdf
+        uses: asdf-vm/actions/setup@v3
+
+      - name: Install tools from .tool-versions
+        run: asdf install
+
+      - name: env-check
+        uses: EffortlessMetrics/env-check@v0.1.0
+        with:
+          profile: team
+```
+
+### Using with mise
+
+```yaml
+# GitHub Actions - with mise
+jobs:
+  env-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup mise
+        uses: jdx/mise-action@v2
+
+      - name: Install tools
+        run: mise install
+
+      - name: env-check
+        uses: EffortlessMetrics/env-check@v0.1.0
+        with:
+          profile: team
+```
+
+### Using with volta
+
+```yaml
+# GitHub Actions - with volta
+jobs:
+  env-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Volta
+        uses: volta-cli/action@v4
+
+      - name: env-check
+        uses: EffortlessMetrics/env-check@v0.1.0
+        with:
+          profile: oss
+```
+
+---
+
+## GitLab CI Advanced Patterns
+
+### Multi-Stage Pipeline with Environment Validation
+
+```yaml
+# .gitlab-ci.yml - Multi-stage with env-check
+stages:
+  - validate
+  - test
+  - build
+
+.env-check:
+  stage: validate
+  image: rust:latest
+  script:
+    - curl -sL https://github.com/EffortlessMetrics/env-check/releases/latest/download/env-check-installer.sh | sh
+    - env-check check --profile team --out artifacts/env-check/report.json --md artifacts/env-check/comment.md
+  artifacts:
+    when: always
+    paths:
+      - artifacts/env-check/
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      allow_failure: false
+    - allow_failure: true
+
+test:
+  stage: test
+  needs: [.env-check]
+  script:
+    - echo "Running tests with validated environment"
+```
+
+### GitLab Matrix
+
+```yaml
+# .gitlab-ci.yml - Matrix builds
+env-check:
+  parallel:
+    matrix:
+      - PROFILE: [oss, team, strict]
+        OS: [ubuntu, macos]
+  stage: validate
+  tags:
+    - docker
+  image: rust:latest
+  script:
+    - curl -sL https://github.com/EffortlessMetrics/env-check/releases/latest/download/env-check-installer.sh | sh
+    - env-check check --profile $PROFILE --out artifacts/env-check/report.json
+  artifacts:
+    when: always
+    paths:
+      - artifacts/env-check/
+```
+
+---
+
+## CircleCI Advanced Patterns
+
+### Multi-Platform with Orbs
+
+```yaml
+# .circleci/config.yml - Multi-platform with orbs
+version: 2.1
+
+orbs:
+  node: circleci/node@5
+
+jobs:
+  env-check:
+    parameters:
+      os:
+        type: executor
+      profile:
+        type: string
+        default: "oss"
+    executor: << parameters.os >>
+    steps:
+      - checkout
+      - run:
+          name: Install env-check
+          command: curl -sL https://github.com/EffortlessMetrics/env-check/releases/latest/download/env-check-installer.sh | sh
+      - run:
+          name: Run env-check
+          command: env-check check --profile << parameters.profile >> --out artifacts/env-check/report.json
+      - store_artifacts:
+          path: artifacts/env-check
+
+workflows:
+  validate:
+    jobs:
+      - env-check:
+          matrix:
+            parameters:
+              os: [linux, macos]
+              profile: [oss, team]
+```
+
+---
+
+## Azure Pipelines Advanced Patterns
+
+### Multi-Stage Pipeline
+
+```yaml
+# azure-pipelines.yml - Multi-stage pipeline
+trigger:
+  branches:
+    include:
+      - main
+      - feature/*
+
+stages:
+  - stage: Validate
+    jobs:
+      - job: env_check
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - script: |
+              curl -sL https://github.com/EffortlessMetrics/env-check/releases/latest/download/env-check-installer.sh | sh
+            displayName: 'Install env-check'
+          
+          - script: |
+              env-check check --profile team --out $(Build.ArtifactStagingDirectory)/env-check/report.json
+            displayName: 'Run env-check'
+          
+          - task: PublishBuildArtifacts@1
+            condition: always()
+            inputs:
+              pathToPublish: $(Build.ArtifactStagingDirectory)/env-check
+              artifactName: env-check
+
+  - stage: Build
+    dependsOn: Validate
+    jobs:
+      - job: build
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - script: echo "Building with validated environment..."
+```
+
+### Azure Matrix Strategy
+
+```yaml
+# azure-pipelines.yml - Matrix strategy
+jobs:
+  - job: env_check
+    strategy:
+      matrix:
+        linux_oss:
+          os: ubuntu-latest
+          profile: oss
+        linux_strict:
+          os: ubuntu-latest
+          profile: strict
+        windows_oss:
+          os: windows-latest
+          profile: oss
+        macos_oss:
+          os: macos-latest
+          profile: oss
+    pool:
+      vmImage: $(os)
+    steps:
+      - script: |
+          curl -sL https://github.com/EffortlessMetrics/env-check/releases/latest/download/env-check-installer.sh | sh
+        displayName: 'Install env-check'
+      
+      - script: |
+          env-check check --profile $(profile) --out $(Build.ArtifactStagingDirectory)/env-check/report.json
+        displayName: 'Run env-check'
+```
+
+---
+
+## Troubleshooting CI Issues
+
+### Common Problems
+
+| Problem | Cause | Solution |
+|---------|-------|----------|
+| Tool not found | Tool not installed on runner | Add setup step or use different runner |
+| Version mismatch | Runner has different version | Pin versions in CI or use version manager |
+| Permission denied | Script not executable | Add `chmod +x` or use proper shell |
+| Timeout | Tool probing takes too long | Use `--probe-timeout` flag |
+| Artifacts missing | Output path incorrect | Verify `artifacts/env-check/` path |
+
+### Debug Mode in CI
+
+```yaml
+# Enable debug logging for troubleshooting
+- name: env-check
+  uses: EffortlessMetrics/env-check@v0.1.0
+  with:
+    profile: team
+    debug: true
+
+- name: Upload debug logs
+  if: failure()
+  uses: actions/upload-artifact@v4
+  with:
+    name: env-check-debug
+    path: artifacts/env-check/extras/raw.log
+```
+
+---
+
 ## See Also
 
 - [CLI Reference](cli-reference.md) - Full command-line documentation

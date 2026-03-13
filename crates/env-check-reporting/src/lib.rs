@@ -46,17 +46,17 @@ pub fn build_data(
         },
     });
 
-    if !parsed.source_data.is_empty()
-        && let Some(data_obj) = data.as_object_mut()
-    {
-        let mut source_data_obj = serde_json::Map::new();
-        for (path, value) in &parsed.source_data {
-            source_data_obj.insert(path.clone(), value.clone());
+    if !parsed.source_data.is_empty() {
+        if let Some(data_obj) = data.as_object_mut() {
+            let mut source_data_obj = serde_json::Map::new();
+            for (path, value) in &parsed.source_data {
+                source_data_obj.insert(path.clone(), value.clone());
+            }
+            data_obj.insert(
+                "source_data".to_string(),
+                serde_json::Value::Object(source_data_obj),
+            );
         }
-        data_obj.insert(
-            "source_data".to_string(),
-            serde_json::Value::Object(source_data_obj),
-        );
     }
 
     data

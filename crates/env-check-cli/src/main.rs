@@ -1,8 +1,10 @@
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::{generate, Shell};
 use env_check_app::{CheckOptions, run_check_with_options, write_atomic};
 use env_check_types::{
     ArtifactRef, FailOn, Profile, ReceiptEnvelope, explain_entries, explain_message,
@@ -63,6 +65,11 @@ enum Command {
         #[arg(long, env = "ENV_CHECK_DEBUG_LOG")]
         log_file: Option<PathBuf>,
 
+        /// Timeout in seconds for individual tool probing operations.
+        /// Defaults to 30 seconds if not specified.
+        #[arg(long, default_value_t = 30)]
+        probe_timeout: u64,
+
         /// Optional GitHub annotations output path.
         /// Writes workflow command annotations for top findings.
         #[arg(long)]
@@ -118,6 +125,20 @@ enum Command {
         /// The finding code or check_id to explain
         #[arg(value_name = "CODE", required_unless_present = "list")]
         code: Option<String>,
+    },
+
+    /// Generate shell completion scripts for env-check.
+    ///
+    /// Supports bash, zsh, fish, and PowerShell. The completion script is
+    /// printed to stdout and can be redirected to the appropriate location
+    /// for your shell.
+    #[command(
+        after_help = "EXAMPLES:\n    env-check completions bash > /usr/share/bash-completion/completions/env-check\n    env-check completions zsh > ~/.zfunc/_env-check\n    env-check completions fish > ~/.config/fish/completions/env-check.fish\n    env-check completions powershell > env-check.ps1"
+    )]
+    Completions {
+        /// The shell to generate completions for (bash, zsh, fish, powershell)
+        #[arg(value_name = "SHELL")]
+        shell: String,
     },
 }
 
@@ -233,6 +254,7 @@ fn main() -> anyhow::Result<()> {
 
             let options = CheckOptions {
                 debug_log_path: debug_log_path.clone(),
+                probe_timeout_secs: probe_timeout,
             };
 
             match run_check_with_options(
@@ -348,6 +370,24 @@ fn main() -> anyhow::Result<()> {
                 println!("{}", explain(&code));
             }
         }
+        Command::Completions { shell } => {
+            let shell_type = match shell.to_lowercase().as_str() {
+                "bash" => Shell::Bash,
+                "zsh" => Shell::Zsh,
+                "fish" => Shell::Fish,
+                "powershell" => Shell::PowerShell,
+                _ => {
+                    eprintln!(
+                        "error: invalid shell '{}'. Supported shells: bash, zsh, fish, powershell",
+                        shell
+                    );
+                    std::process::exit(1);
+                }
+            };
+            let mut cmd = Cli::command();
+            let name = cmd.get_name().to_string();
+            generate(shell_type, &mut cmd, name, &mut io::stdout());
+        }
     }
 
     Ok(())
@@ -373,16 +413,16 @@ fn maybe_add_artifact(
     if !artifact_path.exists() {
         return;
     }
-    if let Some(receipt_parent) = receipt_path.parent()
-        && let Ok(rel) = artifact_path.strip_prefix(receipt_parent)
-    {
-        let artifact = ArtifactRef {
-            path: rel.to_string_lossy().replace('\\', "/"),
-            kind: kind.to_string(),
-            description: Some(description.to_string()),
-        };
-        if artifact.is_safe() {
-            receipt.artifacts.push(artifact);
+    if let Some(receipt_parent) = receipt_path.parent() {
+        if let Ok(rel) = artifact_path.strip_prefix(receipt_parent) {
+            let artifact = ArtifactRef {
+                path: rel.to_string_lossy().replace('\\', "/"),
+                kind: kind.to_string(),
+                description: Some(description.to_string()),
+            };
+            if artifact.is_safe() {
+                receipt.artifacts.push(artifact);
+            }
         }
     }
 }

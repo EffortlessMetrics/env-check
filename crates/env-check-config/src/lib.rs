@@ -10,6 +10,9 @@ use anyhow::Context;
 use env_check_types::{FailOn, Profile};
 use serde::Deserialize;
 
+/// Default probe timeout in seconds.
+pub const DEFAULT_PROBE_TIMEOUT_SECS: u64 = 30;
+
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct AppConfig {
     #[serde(default)]
@@ -24,6 +27,10 @@ pub struct AppConfig {
     pub ignore_tools: Vec<String>,
     #[serde(default)]
     pub force_required: Vec<String>,
+    /// Timeout in seconds for individual tool probing operations.
+    /// Defaults to 30 seconds if not specified.
+    #[serde(default)]
+    pub probe_timeout_secs: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
