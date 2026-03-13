@@ -7,7 +7,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 
 use anyhow::Context;
 use env_check_types::{
@@ -349,7 +349,7 @@ impl<R: CommandRunner, W: DebugLogWriter> LoggingCommandRunner<R, W> {
 impl<R: CommandRunner, W: DebugLogWriter> CommandRunner for LoggingCommandRunner<R, W> {
     fn run(&self, cwd: &Path, argv: &[String]) -> Result<CmdOutput, EnvCheckError> {
         let timestamp = chrono::Utc::now().to_rfc3339();
-        let cmd_str = argv.join(" ");
+        let cmd_str = redact_sensitive(&argv.join(" "));
 
         self.writer
             .write_line(&format!("[{}] EXEC: {}", timestamp, cmd_str));
@@ -377,7 +377,10 @@ impl<R: CommandRunner, W: DebugLogWriter> CommandRunner for LoggingCommandRunner
                 }
             }
             Err(e) => {
-                self.writer.write_line(&format!("  error: {}", e));
+                self.writer.write_line(&format!(
+                    "  error: {}",
+                    truncate_for_log(&e.to_string(), 200)
+                ));
             }
         }
 
@@ -390,7 +393,8 @@ impl<R: CommandRunner, W: DebugLogWriter> CommandRunner for LoggingCommandRunner
 
 /// Truncate a string for logging purposes, replacing newlines and limiting length.
 fn truncate_for_log(s: &str, max_len: usize) -> String {
-    let cleaned: String = s
+    let redacted = redact_sensitive(s);
+    let cleaned: String = redacted
         .chars()
         .map(|c| if c == '\n' || c == '\r' { ' ' } else { c })
         .collect();
@@ -400,6 +404,38 @@ fn truncate_for_log(s: &str, max_len: usize) -> String {
     } else {
         format!("{}...", &trimmed[..max_len])
     }
+}
+
+// Redact common secret-like patterns before writing debug logs.
+static ENV_ASSIGN_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i)\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|ACCESS_KEY|PRIVATE_KEY)[A-Z0-9_]*)=([^\s]+)",
+    )
+    .expect("compile ENV_ASSIGN_RE")
+});
+static FLAG_SECRET_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i)(--?(?:token|secret|password|passwd|api[-_]?key|access[-_]?key|private[-_]?key))(=|\s+)([^\s]+)",
+    )
+    .expect("compile FLAG_SECRET_RE")
+});
+static AUTH_BEARER_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)(authorization:\s*bearer\s+)([^\s]+)").expect("compile AUTH_BEARER_RE")
+});
+static QUERY_SECRET_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)([?&](?:token|access_token|api_key|apikey|password|secret)=)([^&\s]+)")
+        .expect("compile QUERY_SECRET_RE")
+});
+
+fn redact_sensitive(s: &str) -> String {
+    let step1 = ENV_ASSIGN_RE.replace_all(s, "$1=[REDACTED]");
+    let step2 = FLAG_SECRET_RE.replace_all(&step1, |caps: &regex::Captures<'_>| {
+        format!("{}{}[REDACTED]", &caps[1], &caps[2])
+    });
+    let step3 = AUTH_BEARER_RE.replace_all(&step2, "$1[REDACTED]");
+    QUERY_SECRET_RE
+        .replace_all(&step3, "$1[REDACTED]")
+        .into_owned()
 }
 
 /// Fake/test adapters for use in other crates' tests.
@@ -513,10 +549,12 @@ pub mod fakes {
 
         /// Create a FakeClock with a default fixed timestamp (2024-01-01T00:00:00Z).
         pub fn default_time() -> Self {
-            use chrono::TimeZone;
-            Self {
-                fixed_time: chrono::Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
-            }
+            use chrono::{LocalResult, TimeZone};
+            let fixed_time = match chrono::Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0) {
+                LocalResult::Single(time) => time,
+                _ => chrono::DateTime::from(std::time::UNIX_EPOCH),
+            };
+            Self { fixed_time }
         }
     }
 
@@ -1044,6 +1082,50 @@ mod tests {
         assert!(!result.contains('\r'));
         assert!(result.contains("line1"));
         assert!(result.contains("line2"));
+    }
+
+    #[test]
+    fn redact_sensitive_rewrites_common_secret_patterns() {
+        let input = "API_TOKEN=abc123 --token supersecret Authorization: Bearer zzz url=https://x.test?a=1&access_token=abc";
+        let redacted = redact_sensitive(input);
+
+        assert!(redacted.contains("API_TOKEN=[REDACTED]"));
+        assert!(redacted.contains("--token [REDACTED]"));
+        assert!(redacted.contains("Authorization: Bearer [REDACTED]"));
+        assert!(redacted.contains("access_token=[REDACTED]"));
+        assert!(!redacted.contains("abc123"));
+        assert!(!redacted.contains("supersecret"));
+    }
+
+    #[test]
+    fn logging_runner_redacts_command_and_output() {
+        let inner = FakeCommandRunner::new().with_response(
+            "tool",
+            CmdOutput {
+                exit: Some(0),
+                stdout: "TOKEN=secret-stdout".to_string(),
+                stderr: "Authorization: Bearer secret-stderr".to_string(),
+            },
+        );
+        let writer = TestLogWriter::new();
+        let runner = LoggingCommandRunner::new(inner, &writer);
+
+        let _ = runner.run(
+            Path::new("/repo"),
+            &[
+                "tool".to_string(),
+                "--token".to_string(),
+                "secret-arg".to_string(),
+            ],
+        );
+
+        let log = writer.get_lines().join("\n");
+        assert!(log.contains("--token [REDACTED]"));
+        assert!(log.contains("TOKEN=[REDACTED]"));
+        assert!(log.contains("Authorization: Bearer [REDACTED]"));
+        assert!(!log.contains("secret-arg"));
+        assert!(!log.contains("secret-stdout"));
+        assert!(!log.contains("secret-stderr"));
     }
 
     #[test]

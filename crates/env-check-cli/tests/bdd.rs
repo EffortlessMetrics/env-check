@@ -20,7 +20,12 @@ struct EnvWorld {
     out_path: Option<PathBuf>,
     md_path: Option<PathBuf>,
     log_path: Option<PathBuf>,
+    env_overrides: Vec<(String, String)>,
     stdout: Option<String>,
+    last_profile: Option<String>,
+    last_fail_on: Option<String>,
+    last_markdown: bool,
+    last_debug: bool,
 }
 
 #[given(expr = "a repo fixture {string}")]
@@ -43,7 +48,17 @@ async fn given_fixture(world: &mut EnvWorld, name: String) {
     world.out_path = None;
     world.md_path = None;
     world.log_path = None;
+    world.env_overrides = Vec::new();
     world.stdout = None;
+    world.last_profile = None;
+    world.last_fail_on = None;
+    world.last_markdown = false;
+    world.last_debug = false;
+}
+
+#[given(expr = "environment variable {string} is set to {string}")]
+async fn given_env_var(world: &mut EnvWorld, key: String, value: String) {
+    world.env_overrides.push((key, value));
 }
 
 #[when(expr = "I run env-check with profile {string}")]
@@ -80,6 +95,9 @@ async fn when_run_explain(world: &mut EnvWorld, code: String) {
 
     // Make the environment deterministic
     cmd.env("PATH", "");
+    for (key, value) in &world.env_overrides {
+        cmd.env(key, value);
+    }
 
     let out = cmd.output().expect("run env-check explain");
     world.exit_code = out.status.code();
@@ -93,6 +111,11 @@ fn run_env_check(
     with_markdown: bool,
     with_debug: bool,
 ) {
+    world.last_profile = Some(profile.to_string());
+    world.last_fail_on = fail_on.map(|v| v.to_string());
+    world.last_markdown = with_markdown;
+    world.last_debug = with_debug;
+
     let root = world.repo_root.as_ref().expect("fixture root");
     let tmp = world.tmp.as_ref().expect("temp dir");
 
@@ -125,8 +148,12 @@ fn run_env_check(
         cmd.arg("--debug").arg("--log-file").arg(&log_path);
     }
 
-    // Make the environment deterministic: don't leak tools from the host.
-    cmd.env("PATH", "");
+    // Make probing deterministic: only allow fixture-local fakes and the
+    // built env-check binary (for controlled version-mismatch scenarios).
+    cmd.env("PATH", deterministic_probe_path(root));
+    for (key, value) in &world.env_overrides {
+        cmd.env(key, value);
+    }
 
     let out = cmd.output().expect("run env-check");
     world.exit_code = out.status.code();
@@ -149,6 +176,22 @@ fn run_env_check(
     {
         world.markdown = Some(content);
     }
+}
+
+fn deterministic_probe_path(root: &Path) -> std::ffi::OsString {
+    let mut entries: Vec<PathBuf> = Vec::new();
+
+    let fixture_bin = root.join("bin");
+    if fixture_bin.is_dir() {
+        entries.push(fixture_bin);
+    }
+
+    let exe = PathBuf::from(env!("CARGO_BIN_EXE_env-check"));
+    if let Some(exe_dir) = exe.parent() {
+        entries.push(exe_dir.to_path_buf());
+    }
+
+    std::env::join_paths(entries).expect("join deterministic PATH entries")
 }
 
 #[then(expr = "the exit code is {int}")]
@@ -230,6 +273,28 @@ async fn then_report_contains_source(world: &mut EnvWorld, source: String) {
     );
 }
 
+#[then(expr = "the report does not contain source {string}")]
+async fn then_report_does_not_contain_source(world: &mut EnvWorld, source: String) {
+    let report = world
+        .report_json
+        .as_ref()
+        .expect("report JSON should exist");
+    let sources = report
+        .get("data")
+        .and_then(|d| d.get("sources_used"))
+        .and_then(|s| s.as_array())
+        .expect("data.sources_used should be an array");
+
+    let sources_list: Vec<&str> = sources.iter().filter_map(|v| v.as_str()).collect();
+
+    assert!(
+        !sources_list.iter().any(|s| s.contains(&source)),
+        "expected sources not to contain '{}', got: {:?}",
+        source,
+        sources_list
+    );
+}
+
 #[then(expr = "the report contains finding code {string}")]
 async fn then_report_contains_finding_code(world: &mut EnvWorld, code: String) {
     let report = world
@@ -251,6 +316,84 @@ async fn then_report_contains_finding_code(world: &mut EnvWorld, code: String) {
         "expected findings to contain code '{}', got: {:?}",
         code,
         codes
+    );
+}
+
+#[then(expr = "the report ci provider is {string}")]
+async fn then_report_ci_provider(world: &mut EnvWorld, expected: String) {
+    let report = world
+        .report_json
+        .as_ref()
+        .expect("report JSON should exist");
+
+    let provider = report
+        .get("run")
+        .and_then(|r| r.get("ci"))
+        .and_then(|c| c.get("provider"))
+        .and_then(|v| v.as_str())
+        .expect("run.ci.provider should exist");
+
+    assert_eq!(
+        provider,
+        expected.as_str(),
+        "expected CI provider '{}'",
+        expected
+    );
+}
+
+#[then(expr = "the report capability {string} status is {string}")]
+async fn then_report_capability_status(world: &mut EnvWorld, capability: String, expected: String) {
+    let capabilities = world
+        .report_json
+        .as_ref()
+        .expect("report JSON should exist")
+        .get("run")
+        .and_then(|r| r.get("capabilities"))
+        .expect("run.capabilities should exist");
+
+    let status = capabilities
+        .get(&capability)
+        .and_then(|cap| cap.get("status"))
+        .and_then(|status| status.as_str())
+        .unwrap_or_else(|| panic!("capability '{}' is missing status", capability));
+
+    assert_eq!(
+        status,
+        expected.as_str(),
+        "expected capability '{}' status '{}' got '{}'",
+        capability,
+        expected,
+        status
+    );
+}
+
+#[then(expr = "the finding code {string} has help containing {string}")]
+async fn then_finding_help_contains(world: &mut EnvWorld, code: String, expected: String) {
+    let report = world
+        .report_json
+        .as_ref()
+        .expect("report JSON should exist");
+    let findings = report
+        .get("findings")
+        .and_then(|f| f.as_array())
+        .expect("findings should be an array");
+
+    let finding = findings
+        .iter()
+        .find(|f| f.get("code").and_then(|c| c.as_str()) == Some(code.as_str()))
+        .unwrap_or_else(|| panic!("expected finding code '{}', got {:?}", code, findings));
+
+    let help = finding
+        .get("help")
+        .and_then(|h| h.as_str())
+        .unwrap_or_else(|| panic!("expected help text for finding code '{}'", code));
+
+    assert!(
+        help.contains(&expected),
+        "expected help for '{}' to contain '{}', got '{}'",
+        code,
+        expected,
+        help
     );
 }
 
@@ -479,11 +622,49 @@ async fn then_report_data_contains_sources_used(world: &mut EnvWorld) {
     );
 }
 
+#[then(expr = "the report is stable across reruns")]
+async fn then_report_stable_across_reruns(world: &mut EnvWorld) {
+    let first = world
+        .report_json
+        .clone()
+        .expect("report JSON should exist after first run");
+    let profile = world
+        .last_profile
+        .clone()
+        .expect("profile should be captured from when-step");
+    let fail_on = world.last_fail_on.clone();
+    let with_markdown = world.last_markdown;
+    let with_debug = world.last_debug;
+
+    run_env_check(
+        world,
+        &profile,
+        fail_on.as_deref(),
+        with_markdown,
+        with_debug,
+    );
+
+    let second = world
+        .report_json
+        .clone()
+        .expect("report JSON should exist after rerun");
+
+    let first_norm = normalize_report_for_stability(first);
+    let second_norm = normalize_report_for_stability(second);
+
+    assert_eq!(
+        first_norm, second_norm,
+        "normalized report changed across reruns"
+    );
+}
+
 fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
     fs::create_dir_all(dst)?;
 
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
+    let mut entries: Vec<_> = fs::read_dir(src)?.collect::<std::io::Result<Vec<_>>>()?;
+    entries.sort_by_key(|entry| entry.file_name());
+
+    for entry in entries {
         let file_type = entry.file_type()?;
         let from = entry.path();
         let to = dst.join(entry.file_name());
@@ -497,6 +678,15 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
     }
 
     Ok(())
+}
+
+fn normalize_report_for_stability(mut report: Value) -> Value {
+    if let Some(run) = report.get_mut("run").and_then(|r| r.as_object_mut()) {
+        run.remove("started_at");
+        run.remove("ended_at");
+        run.remove("duration_ms");
+    }
+    report
 }
 
 #[tokio::main]

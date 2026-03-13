@@ -12,19 +12,19 @@ This crate is the application layer that connects all the pieces: sources, probe
 
 ```rust
 pub fn run_check(
-    repo_root: &Path,
+    root: &Path,
     config_path: Option<&Path>,
-    policy: &PolicyConfig,
-    report_path: &Path,
-) -> Result<(ReceiptEnvelope, Option<String>)>
+    profile: Profile,
+    fail_on: FailOn,
+) -> anyhow::Result<CheckOutput>
 
 pub fn run_check_with_options(
-    repo_root: &Path,
+    root: &Path,
     config_path: Option<&Path>,
-    policy: &PolicyConfig,
-    report_path: &Path,
-    options: &CheckOptions,
-) -> Result<(ReceiptEnvelope, Option<String>)>
+    profile: Profile,
+    fail_on: FailOn,
+    options: CheckOptions,
+) -> anyhow::Result<CheckOutput>
 ```
 
 ### Pipeline Steps
@@ -34,20 +34,22 @@ pub fn run_check_with_options(
 3. `normalize_requirements()`: Dedupe, filter ignores, apply force-required
 4. `probe_requirements()`: Run probes (with optional debug logging)
 5. `evaluate()`: Apply domain logic
-6. `build_receipt()`: Construct receipt envelope with metadata
-7. `write_atomic()`: Write JSON artifact
-8. `render_markdown()`: Generate optional markdown
+6. `build_data()` + `build_capabilities()`: Construct deterministic receipt payloads
+7. `build_receipt()`: Construct receipt envelope with metadata
+8. `render_markdown()`: Generate markdown artifact content
 
 ## Configuration (env-check.toml)
 
 ```toml
 profile = "team"          # Override default profile
 fail_on = "error"         # Override fail_on behavior
-hash_manifest = "custom/path.sha256"
-
-[tools]
-ignore = ["optional-tool"]
+hash_manifests = ["custom/path.sha256"]
+ignore_tools = ["optional-tool"]
 force_required = ["critical-tool"]
+
+[sources]
+enabled = ["node", "python", "go"]    # optional parser allowlist
+disabled = ["go"]                     # optional parser blocklist
 ```
 
 ## Environment Detection
@@ -59,7 +61,7 @@ force_required = ["critical-tool"]
 
 ## Atomic Writes
 
-Uses temp file + rename pattern to prevent partial artifacts in CI:
+Re-exported from `env-check-runtime` for callers:
 ```rust
 write_atomic(path, content)?; // Never leaves partial file
 ```
@@ -73,7 +75,7 @@ When `CheckOptions::debug_log_path` is set:
 
 ## Working Agreements
 
-- This is the only crate that performs real I/O
+- This crate owns orchestration I/O (config load + probes); CLI owns final artifact writes
 - All other crates are pure/testable
 - Atomic writes prevent CI artifact corruption
 - Debug logs are optional side effects

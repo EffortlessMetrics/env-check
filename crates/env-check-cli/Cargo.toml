@@ -9,12 +9,19 @@ homepage.workspace = true
 authors.workspace = true
 keywords.workspace = true
 categories.workspace = true
-description = "CLI tool to validate machine tool requirements against repository specs"
-readme = "../../README.md"
+description = "Clap-based CLI for running env-check checks, markdown rendering, and code explanations."
+readme = "README.md"
+documentation = "https://github.com/EffortlessMetrics/env-check/tree/main/crates/env-check-cli"
 
 [[bin]]
 name = "env-check"
 path = "src/main.rs"
+
+[features]
+default = ["env-check-app/default"]
+parser-node = ["env-check-app/parser-node"]
+parser-python = ["env-check-app/parser-python"]
+parser-go = ["env-check-app/parser-go"]
 
 [dependencies]
 env-check-app.workspace = true

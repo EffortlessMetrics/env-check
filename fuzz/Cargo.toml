@@ -10,6 +10,9 @@ homepage.workspace = true
 authors.workspace = true
 keywords.workspace = true
 categories.workspace = true
+description = "cargo-fuzz targets for env-check source parser hardening."
+readme = "README.md"
+documentation = "https://github.com/EffortlessMetrics/env-check/tree/main/fuzz"
 
 [package.metadata]
 cargo-fuzz = true
@@ -20,6 +23,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 env-check-sources = { path = "../crates/env-check-sources" }
+env-check-sources-hash = { path = "../crates/env-check-sources-hash" }
 
 [dependencies.env-check-types]
 path = "../crates/env-check-types"

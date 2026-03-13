@@ -9,8 +9,9 @@ homepage.workspace = true
 authors.workspace = true
 keywords.workspace = true
 categories.workspace = true
-description = "Probe machine for tool presence, versions, and file hashes"
-readme = "../../README.md"
+description = "Probe adapters for tool presence, versions, and file hashes through injectable ports."
+readme = "README.md"
+documentation = "https://github.com/EffortlessMetrics/env-check/tree/main/crates/env-check-probe"
 
 [dependencies]
 env-check-types.workspace = true

@@ -101,6 +101,6 @@ cargo run -p xtask -- mutants
 
 1. Add code constant in `env-check-types::codes`
 2. Add evaluation logic that emits the finding
-3. Add explain entry in `env-check-cli` explain command
+3. Add explain entry in `env-check-types` explain registry
 4. Add snapshot test coverage
 5. Update root CLAUDE.md with new code

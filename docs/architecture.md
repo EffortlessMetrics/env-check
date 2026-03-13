@@ -68,7 +68,9 @@ If none exist, env-check should emit a **skip** receipt with reason `no_sources`
 ### Optional explicit config
 
 - `env-check.toml` for overrides and policy knobs:
-  - which sources to consider
+  - which sources to consider via `[sources]`
+    - `enabled = ["node", "python", "go"]`
+    - `disabled = ["python"]`
   - custom probes per tool
   - allow/deny lists
   - fail-on rules and caps
@@ -81,6 +83,7 @@ If none exist, env-check should emit a **skip** receipt with reason `no_sources`
 artifacts/env-check/report.json        # canonical receipt (required)
 artifacts/env-check/comment.md         # optional markdown summary
 artifacts/env-check/extras/raw.log     # optional probe transcript (debugging)
+artifacts/env-check/extras/annotations.txt # optional GitHub workflow annotations
 ```
 
 ### Receipt contract
@@ -137,7 +140,7 @@ missing = "warn" # or "fail" once adopted
 Given identical inputs (repo files + probe results), outputs must be byte-stable:
 
 - Receipt fields and ordering are deterministic.
-- Findings sorted: `severity desc → tool → path → line → code → message`
+- Findings sorted: `severity desc → path → check_id → code → message`
 - Truncation behavior is deterministic and explicitly noted in `data`.
 
 ## Security posture
@@ -146,4 +149,4 @@ env-check executes external commands as part of probing. Constraints:
 
 - Commands are fixed argv vectors (no shell parsing).
 - Probes are allowlisted by tool name (no “run arbitrary command from config” in v0.1).
-- The probe transcript (`extras/raw.log`) should redact obvious secrets (future enhancement).
+- The probe transcript (`extras/raw.log`) redacts obvious secrets.

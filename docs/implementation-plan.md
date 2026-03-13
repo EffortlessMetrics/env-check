@@ -1,5 +1,34 @@
 # env-check implementation plan
 
+> **Status: COMPLETE** - All phases implemented and verified as of v0.1.0 (March 2024)
+
+## Completion Summary
+
+All 7 implementation phases have been completed successfully:
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 0 | Contracts and scaffolding | ✅ Complete |
+| 1 | Source discovery + parsing | ✅ Complete |
+| 2 | Probing | ✅ Complete |
+| 3 | Evaluation engine | ✅ Complete |
+| 4 | CLI UX + renderers | ✅ Complete |
+| 5 | Conformance + hardening | ✅ Complete |
+| 6 | Release + adoption surface | ✅ Complete |
+| 7 | Adoption validation | ✅ Complete |
+
+### Key Artifacts
+- **Receipt Schema**: `schemas/` with `sensor.report.v1` contract
+- **BDD Tests**: `features/env_check.feature` with 551 lines of scenarios
+- **Fuzz Targets**: 10 fuzz targets in `fuzz/fuzz_targets/`
+- **GitHub Action**: `action.yml` for CI/CD integration
+- **Architecture Decision Records**: `docs/adr/` with 10 documented decisions
+
+### Next Steps
+See [docs/now-next-later.md](now-next-later.md) for the roadmap beyond v0.1.0.
+
+---
+
 This plan is sequenced to land small, reversible increments while keeping contracts stable.
 
 ## Phase 0 — Contracts and scaffolding ✅
@@ -131,7 +160,7 @@ This plan is sequenced to land small, reversible increments while keeping contra
    - writes `report.json` atomically (write-temp + rename)
 3. Markdown renderer:
    - concise, capped, link-oriented
-4. Optional GitHub annotations renderer (future):
+4. Optional GitHub annotations renderer:
    - emit top N findings as workflow commands
 
 ### Tests
@@ -163,7 +192,7 @@ This plan is sequenced to land small, reversible increments while keeping contra
 - [x] CI includes: unit + integration + BDD + proptest + fuzz smoke + mutants (timeboxed)
 - [x] "no sources" and "partial failure" cases emit meaningful receipts
 
-## Phase 6 — Release + adoption surface
+## Phase 6 — Release + adoption surface ✅
 
 ### Work
 
@@ -180,7 +209,7 @@ This plan is sequenced to land small, reversible increments while keeping contra
 - [x] A repo can adopt env-check with one workflow step and one config stanza
 - [x] Output is stable enough that cockpit can treat it as an API
 
-## Phase 7 — Adoption validation (repo-only)
+## Phase 7 — Adoption validation (repo-only) ✅
 
 ### Work (checklist)
 
@@ -202,6 +231,11 @@ This plan is sequenced to land small, reversible increments while keeping contra
   - release tag `v0.1.0` produces installers + binaries
 
 **Pilots:** skipped (repo-only validation for this phase).
+
+### Definition of done
+
+- [x] Repo-only Phase 7 checks are automated in `xtask conform` and `xtask adoption-check`
+- [x] CI runs the conformance harness so adoption guards stay enforced over time
 
 ## BDD scenarios (minimum set)
 

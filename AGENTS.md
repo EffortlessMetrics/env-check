@@ -21,7 +21,7 @@ non-negotiables for contributors.
   `tool.runtime_error` finding.
 - Determinism: stable ordering and sorting rules; findings ordered by
   `severity desc -> path -> check_id -> code -> message`.
-- Dependency direction: `types <- (sources|probe|domain|render) <- app <- cli`.
+- Dependency direction: `types <- (sources|probe|domain|evidence|render) <- app <- cli`.
 
 **Contributor Workflow**
 - Do not run builds/tests/coverage/benchmarks. If needed, direct the user to `CLAUDE.md`.
@@ -60,7 +60,7 @@ non-negotiables for contributors.
   `crates/.../tests` as applicable.
 - Probing & runtime IO: `crates/env-check-probe`.
 - Domain evaluation: `crates/env-check-domain`.
-- Rendering & artifacts: `crates/env-check-render`, `crates/env-check-app`.
+- Rendering & artifacts: `crates/env-check-evidence`, `crates/env-check-render`, `crates/env-check-app`.
 - CLI & UX surface: `crates/env-check-cli`.
 - Release & adoption surface: `action.yml`, `.github/workflows/`, `Cargo.toml`
   (`[workspace.metadata.dist]`), `docs/release.md`, `docs/cockpit.md`, `README.md`.

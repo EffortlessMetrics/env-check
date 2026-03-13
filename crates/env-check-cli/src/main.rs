@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use env_check_app::{CheckOptions, run_check_with_options, write_atomic};
-use env_check_types::{ArtifactRef, FailOn, Profile, ReceiptEnvelope};
+use env_check_types::{
+    ArtifactRef, FailOn, Profile, ReceiptEnvelope, explain_entries, explain_message,
+};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -24,7 +26,7 @@ enum Command {
     /// Reads .tool-versions, .mise.toml, rust-toolchain.toml and other source files
     /// to determine required tools, then probes the local machine to verify they are installed.
     #[command(
-        after_help = "EXAMPLES:\n    env-check check\n    env-check check --profile team --root ./my-repo\n    env-check check --profile strict --md comment.md"
+        after_help = "EXAMPLES:\n    env-check check\n    env-check check --profile team --root ./my-repo\n    env-check check --profile strict --md comment.md\n    env-check check --annotations artifacts/env-check/extras/annotations.txt"
     )]
     Check {
         /// Repo root
@@ -61,6 +63,15 @@ enum Command {
         #[arg(long, env = "ENV_CHECK_DEBUG_LOG")]
         log_file: Option<PathBuf>,
 
+        /// Optional GitHub annotations output path.
+        /// Writes workflow command annotations for top findings.
+        #[arg(long)]
+        annotations: Option<PathBuf>,
+
+        /// Max findings to emit to GitHub annotations output.
+        #[arg(long, default_value_t = 20)]
+        annotations_max: usize,
+
         /// Output mode: default (exit 2 on fail) or cockpit (exit 0 if receipt written).
         ///
         /// In cockpit mode, the exit code is 0 as long as the receipt was successfully written,
@@ -92,17 +103,21 @@ enum Command {
         out: PathBuf,
     },
 
-    /// Explain a stable finding code (e.g., env.missing_tool).
+    /// Explain a stable finding code or check_id (e.g., env.missing_tool, env.version).
     ///
     /// Finding codes are stable identifiers that can be used in CI integrations
     /// to filter or handle specific types of findings.
     #[command(
-        after_help = "EXAMPLES:\n    env-check explain env.missing_tool\n    env-check explain env.version_mismatch\n\nAVAILABLE CODES:\n    env.missing_tool      - Tool not found on PATH\n    env.version_mismatch  - Version constraint not satisfied\n    env.hash_mismatch     - Binary hash doesn't match manifest\n    env.toolchain_missing - Rust toolchain not installed\n    env.source_parse_error - Source file parse error\n    tool.runtime_error    - Probe command execution failed"
+        after_help = "EXAMPLES:\n    env-check explain env.missing_tool\n    env-check explain env.version\n    env-check explain --list"
     )]
     Explain {
-        /// The finding code to explain
-        #[arg(value_name = "CODE")]
-        code: String,
+        /// List all known explainable codes and check IDs.
+        #[arg(long, conflicts_with = "code")]
+        list: bool,
+
+        /// The finding code or check_id to explain
+        #[arg(value_name = "CODE", required_unless_present = "list")]
+        code: Option<String>,
     },
 }
 
@@ -199,6 +214,8 @@ fn main() -> anyhow::Result<()> {
             md,
             debug,
             log_file,
+            annotations,
+            annotations_max,
             mode,
         } => {
             // Determine debug log path:
@@ -229,20 +246,30 @@ fn main() -> anyhow::Result<()> {
             {
                 Ok(mut output) => {
                     // If a debug log was written, add an artifact pointer to the receipt.
-                    // Only safe relative paths are included; absolute/traversal paths are omitted.
-                    if let Some(ref log_path) = debug_log_path
-                        && log_path.exists()
-                        && let Some(receipt_parent) = out.parent()
-                        && let Ok(rel) = log_path.strip_prefix(receipt_parent)
-                    {
-                        let artifact = ArtifactRef {
-                            path: rel.to_string_lossy().replace('\\', "/"),
-                            kind: "debug_log".to_string(),
-                            description: Some("Probe debug transcript".to_string()),
-                        };
-                        if artifact.is_safe() {
-                            output.receipt.artifacts.push(artifact);
-                        }
+                    if let Some(ref log_path) = debug_log_path {
+                        maybe_add_artifact(
+                            &mut output.receipt,
+                            &out,
+                            log_path,
+                            "debug_log",
+                            "Probe debug transcript",
+                        );
+                    }
+
+                    // Optional GitHub annotations side artifact.
+                    if let Some(ref annotations_path) = annotations {
+                        let annotations_text = env_check_render::render_github_annotations(
+                            &output.receipt,
+                            annotations_max,
+                        );
+                        write_atomic(annotations_path, annotations_text.as_bytes())?;
+                        maybe_add_artifact(
+                            &mut output.receipt,
+                            &out,
+                            annotations_path,
+                            "github_annotations",
+                            "GitHub workflow command annotations",
+                        );
                     }
 
                     let json = serde_json::to_vec_pretty(&output.receipt)?;
@@ -264,7 +291,21 @@ fn main() -> anyhow::Result<()> {
                     std::process::exit(exit_code);
                 }
                 Err(err) => {
-                    let receipt = env_check_app::runtime_error_receipt(&err.to_string());
+                    let mut receipt = env_check_app::runtime_error_receipt(&err.to_string());
+
+                    if let Some(ref annotations_path) = annotations {
+                        let annotations_text =
+                            env_check_render::render_github_annotations(&receipt, annotations_max);
+                        write_atomic(annotations_path, annotations_text.as_bytes())?;
+                        maybe_add_artifact(
+                            &mut receipt,
+                            &out,
+                            annotations_path,
+                            "github_annotations",
+                            "GitHub workflow command annotations",
+                        );
+                    }
+
                     let json = serde_json::to_vec_pretty(&receipt)?;
                     write_atomic(&out, &json)?;
 
@@ -300,8 +341,12 @@ fn main() -> anyhow::Result<()> {
             let md = env_check_render::render_markdown(&receipt);
             write_atomic(&out, md.as_bytes())?;
         }
-        Command::Explain { code } => {
-            println!("{}", explain(&code));
+        Command::Explain { list, code } => {
+            if list {
+                print_explain_registry();
+            } else if let Some(code) = code {
+                println!("{}", explain(&code));
+            }
         }
     }
 
@@ -309,27 +354,35 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn explain(code: &str) -> &'static str {
-    match code {
-        "env.missing_tool" => {
-            "The tool is not on PATH. Install it and ensure the runner PATH includes its bin directory."
-        }
-        "env.version_mismatch" => {
-            "The tool is present but its version does not satisfy the repo constraint. Install a compatible version or adjust the repo constraint."
-        }
-        "env.hash_mismatch" => {
-            "A repo-local binary does not match the hash manifest. Re-fetch/restore the binary so it matches repo truth."
-        }
-        "env.toolchain_missing" => {
-            "The repo requires a rust toolchain (rust-toolchain.toml), but rustup or the requested toolchain is missing. Install rustup and the requested toolchain."
-        }
-        "env.source_parse_error" => {
-            "A supported source file exists but could not be parsed. Fix its syntax or remove it temporarily."
-        }
-        "tool.runtime_error" => {
-            "env-check could not execute a probe command. Ensure the tool is executable and the runner allows process execution."
-        }
-        _ => {
-            "Unknown code. If this code was emitted, the explain registry is missing an entry (bug)."
+    explain_message(code)
+}
+
+fn print_explain_registry() {
+    for entry in explain_entries() {
+        println!("{}: {}", entry.id, entry.message);
+    }
+}
+
+fn maybe_add_artifact(
+    receipt: &mut ReceiptEnvelope,
+    receipt_path: &Path,
+    artifact_path: &Path,
+    kind: &str,
+    description: &str,
+) {
+    if !artifact_path.exists() {
+        return;
+    }
+    if let Some(receipt_parent) = receipt_path.parent()
+        && let Ok(rel) = artifact_path.strip_prefix(receipt_parent)
+    {
+        let artifact = ArtifactRef {
+            path: rel.to_string_lossy().replace('\\', "/"),
+            kind: kind.to_string(),
+            description: Some(description.to_string()),
+        };
+        if artifact.is_safe() {
+            receipt.artifacts.push(artifact);
         }
     }
 }
@@ -382,30 +435,30 @@ mod tests {
     #[test]
     fn explain_returns_known_and_unknown_messages() {
         assert!(explain("env.missing_tool").contains("PATH"));
+        assert!(explain("env.presence").contains("PATH"));
         assert!(explain("tool.runtime_error").contains("execute"));
+        assert!(explain("tool.runtime").contains("execute"));
         assert!(explain("unknown.code").contains("Unknown code"));
     }
 
     #[test]
-    fn explain_covers_all_known_codes() {
-        let cases = [
-            ("env.missing_tool", "PATH"),
-            ("env.version_mismatch", "version"),
-            ("env.hash_mismatch", "hash"),
-            ("env.toolchain_missing", "rust"),
-            ("env.source_parse_error", "parse"),
-            ("tool.runtime_error", "probe"),
-        ];
-
-        for (code, expected) in cases {
+    fn explain_covers_all_known_codes_and_checks() {
+        for code in env_check_types::KNOWN_CODES {
             let msg = explain(code);
-            assert!(
-                msg.to_lowercase().contains(&expected.to_lowercase()),
-                "expected explain({}) to mention '{}', got: {}",
-                code,
-                expected,
-                msg
-            );
+            assert_ne!(msg, env_check_types::UNKNOWN_EXPLAIN_MESSAGE);
         }
+        for check in env_check_types::KNOWN_CHECK_IDS {
+            let msg = explain(check);
+            assert_ne!(msg, env_check_types::UNKNOWN_EXPLAIN_MESSAGE);
+        }
+    }
+
+    #[test]
+    fn print_explain_registry_includes_codes_and_checks() {
+        let entries = explain_entries();
+        assert!(entries.iter().any(|e| e.id == "env.missing_tool"));
+        assert!(entries.iter().any(|e| e.id == "env.presence"));
+        assert!(entries.iter().any(|e| e.id == "tool.runtime_error"));
+        assert!(entries.iter().any(|e| e.id == "tool.runtime"));
     }
 }

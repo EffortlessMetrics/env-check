@@ -23,6 +23,12 @@ cargo insta accept
 # Schema validation (xtask)
 cargo run -p xtask -- schema-check
 
+# Conformance harness (schema + determinism + survivability + adoption)
+cargo run -p xtask -- conform
+
+# Phase 7 repo-only adoption checks
+cargo run -p xtask -- adoption-check
+
 # Mutation testing via xtask (recommended)
 cargo run -p xtask -- mutants
 
@@ -42,13 +48,14 @@ env-check is a **machine-truth** sensor that validates whether a machine/CI runn
 ### Crate Dependency Direction
 
 ```
-cli → app → (sources, probe, domain, render) → types
+cli → app → (sources, probe, domain, evidence, render) → types
 ```
 
-- **env-check-types**: Shared DTOs, receipt envelope, domain types, stable finding codes. Safe to depend on from any layer.
+- **env-check-types**: Shared DTOs, receipt envelope, domain types, stable finding codes, and explain registry. Safe to depend on from any layer.
 - **env-check-sources**: Parses repo tool requirements from `.tool-versions`, `.mise.toml`, `rust-toolchain.toml`, and hash manifests.
 - **env-check-probe**: Probes local machine (PATH, versions, hashes) via injectable port traits (`CommandRunner`, `PathResolver`, `Hasher`, `Clock`).
 - **env-check-domain**: Pure policy/evaluation logic. No I/O. Maps `(Requirements × Observations × Policy) → Findings + Verdict`.
+- **env-check-evidence**: Pure deterministic evidence shaping for `data{}` (`observed`, `probes`, `dependencies`).
 - **env-check-render**: Pure markdown renderer from receipt.
 - **env-check-app**: Composition root. Wires adapters, runs the pipeline, writes artifacts.
 - **env-check-cli**: Clap-based CLI entry point.
@@ -161,6 +168,6 @@ Each target has seed corpus files in `fuzz/corpus/<target>/` derived from test f
 ## Working Agreements
 
 - New source/parser requires: fixtures, fuzz target, proptest case
-- New finding code requires: explain entry, snapshot test coverage
+- New finding code requires: explain entry in `env-check-types`, snapshot test coverage
 - Probes use fixed argv vectors (no shell parsing)
 - No "run arbitrary command from config" in v0.1

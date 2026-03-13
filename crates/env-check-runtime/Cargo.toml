@@ -1,0 +1,23 @@
+[package]
+name = "env-check-runtime"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Runtime IO helpers and optional metadata re-exports for env-check."
+readme = "README.md"
+documentation = "https://github.com/EffortlessMetrics/env-check/tree/main/crates/env-check-runtime"
+
+[dependencies]
+env-check-types.workspace = true
+env-check-runtime-metadata = { workspace = true, optional = true }
+anyhow.workspace = true
+
+[features]
+default = ["metadata"]
+metadata = ["dep:env-check-runtime-metadata"]

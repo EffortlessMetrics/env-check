@@ -25,6 +25,8 @@ env-check [OPTIONS]  # 'check' is implicit
 | `--fail-on <LEVEL>` | `error` | Verdict escalation (error/warn/never) |
 | `--out <PATH>` | `artifacts/env-check/report.json` | Receipt output path |
 | `--md <PATH>` | - | Optional markdown output |
+| `--annotations <PATH>` | - | Optional GitHub annotations output |
+| `--annotations-max <N>` | `20` | Max findings in annotations output |
 | `--debug` | false | Enable debug logging |
 | `--log-file <PATH>` | `artifacts/env-check/extras/raw.log` | Debug log path |
 
@@ -46,25 +48,20 @@ env-check md --report <REPORT> [--out <PATH>]
 
 ### explain
 
-Print details about a finding code.
+Print details about a finding code or check ID.
 
 ```bash
-env-check explain <CODE>
+env-check explain <CODE_OR_CHECK_ID>
+env-check explain --list
 ```
 
-Supported codes:
-- `env.missing_tool`
-- `env.version_mismatch`
-- `env.hash_mismatch`
-- `env.toolchain_missing`
-- `env.source_parse_error`
-- `tool.runtime_error`
+Explain entries are sourced from the shared registry in `env-check-types`.
 
 ## Exit Codes
 
 - `0`: Pass or Warn (unless fail_on=warn)
-- `1`: Fail
-- `2`: Error (runtime error, not check failure)
+- `2`: Policy Fail
+- `1`: Tool/runtime error (receipt still written when possible)
 
 ## Working Agreements
 

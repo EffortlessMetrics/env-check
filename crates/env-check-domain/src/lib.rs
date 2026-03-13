@@ -101,7 +101,7 @@ fn eval_one(req: &Requirement, obs: &Observation, policy: &PolicyConfig) -> Vec<
     {
         out.push(Finding {
             severity: severity_for(policy, req.required, "runtime"),
-            check_id: Some("tool.runtime".into()),
+            check_id: Some(checks::RUNTIME.into()),
             code: codes::TOOL_RUNTIME_ERROR.into(),
             message: format!("Failed to probe {}: {}", req.tool, obs.probe.stderr.trim()),
             location: Some(Location { path: req.source.path.clone(), line: None, col: None }),

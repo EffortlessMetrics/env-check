@@ -24,9 +24,19 @@ This document describes the internal design in a **hexagonal (ports/adapters)** 
 ```
 crates/
   env-check-types    # DTOs: receipt envelope + domain types + codes
+  env-check-config   # config parsing/merging for env-check policy and source filters
+  env-check-parser-flags # parser-feature negotiation and aliasing
+  env-check-requirement-normalizer # deterministic requirement normalization policies
+  env-check-runtime-metadata # host/CI/git metadata + repo introspection
+  env-check-sources-node # Node parser microcrate
+  env-check-sources-python # Python parser microcrate
+  env-check-sources-go # Go parser microcrate
+  env-check-sources-hash # Hash manifest parser microcrate
   env-check-sources  # parse source files into Requirements
   env-check-probe    # probe local machine (PATH/version/hash) via ports
   env-check-domain   # policy + evaluation (pure)
+  env-check-evidence # deterministic evidence shaping for data{} (pure)
+  env-check-reporting # deterministic receipt data/capability assembly (pure)
   env-check-render   # markdown renderer (pure)
   env-check-app      # orchestration: wire adapters and write artifacts
   env-check-cli      # clap CLI
@@ -37,8 +47,12 @@ xtask/               # schema checks, fixture tooling
 
 - `domain` depends on `types` only.
 - `render` depends on `types` only.
+- `evidence` depends on `types` only.
 - `sources` depends on `types` (and parsing crates).
 - `probe` depends on `types` (and OS crates).
+- `runtime-metadata` depends on `types`.
+- `runtime` depends on `types` and `runtime-metadata`.
+- `reporting` depends on `types`, `domain`, `sources`, and `evidence`.
 - `app` depends on everything; it is the composition root.
 - `cli` depends on `app` and `types`.
 
@@ -142,7 +156,7 @@ Rules:
 - interpret values:
   - `"1.2.3"` as exact constraint
   - `"latest"` or `"system"` treated as "present only" (no strict version constraint)
-  - arrays and nested tables are preserved in `data` (future)
+  - arrays and nested tables are preserved in `data.source_data`
 
 #### Rust
 

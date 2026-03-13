@@ -63,7 +63,9 @@ fn check_subcommand_help() {
         .success()
         .stdout(predicate::str::contains("--profile"))
         .stdout(predicate::str::contains("--root"))
-        .stdout(predicate::str::contains("--out"));
+        .stdout(predicate::str::contains("--out"))
+        .stdout(predicate::str::contains("--annotations"))
+        .stdout(predicate::str::contains("--annotations-max"));
 }
 
 #[test]
@@ -286,6 +288,34 @@ fn explain_unknown_code() {
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("Unknown code"));
+}
+
+#[test]
+fn explain_requires_code_or_list() {
+    let mut cmd = env_check_cmd();
+    cmd.arg("explain");
+    cmd.assert().failure();
+}
+
+#[test]
+fn explain_known_check_id() {
+    let mut cmd = env_check_cmd();
+    cmd.arg("explain").arg("env.version");
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("version"));
+}
+
+#[test]
+fn explain_list_outputs_known_entries() {
+    let mut cmd = env_check_cmd();
+    cmd.arg("explain").arg("--list");
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("env.missing_tool"))
+        .stdout(predicate::str::contains("env.presence"))
+        .stdout(predicate::str::contains("tool.runtime_error"))
+        .stdout(predicate::str::contains("tool.runtime"));
 }
 
 #[test]
@@ -1023,6 +1053,37 @@ fn malformed_tool_versions_handles_gracefully() {
 }
 
 #[test]
+fn malformed_hash_manifest_emits_source_parse_error() {
+    let tmp = tempdir().unwrap();
+    let out_path = tmp.path().join("report.json");
+
+    let mut cmd = env_check_cmd();
+    cmd.arg("check")
+        .arg("--root")
+        .arg(fixtures_dir().join("malformed_hash_manifest"))
+        .arg("--profile")
+        .arg("oss")
+        .arg("--out")
+        .arg(&out_path);
+
+    cmd.assert().success();
+
+    let content = fs::read_to_string(&out_path).unwrap();
+    let json: Value = serde_json::from_str(&content).expect("report should be valid JSON");
+    assert_eq!(json["verdict"]["status"].as_str(), Some("warn"));
+
+    let findings = json["findings"]
+        .as_array()
+        .expect("findings should be an array");
+    assert!(
+        findings
+            .iter()
+            .any(|f| f["code"].as_str() == Some("env.source_parse_error")),
+        "expected env.source_parse_error finding"
+    );
+}
+
+#[test]
 fn md_command_with_nonexistent_report_fails() {
     let tmp = tempdir().unwrap();
     let md_path = tmp.path().join("output.md");
@@ -1389,6 +1450,8 @@ fn check_help_shows_debug_options() {
         .success()
         .stdout(predicate::str::contains("--debug"))
         .stdout(predicate::str::contains("--log-file"))
+        .stdout(predicate::str::contains("--annotations"))
+        .stdout(predicate::str::contains("--annotations-max"))
         .stdout(predicate::str::contains("ENV_CHECK_DEBUG_LOG"));
 }
 
@@ -1541,4 +1604,53 @@ fn artifact_ref_passes_schema_validation() {
             errors.join("\n")
         );
     }
+}
+
+#[test]
+fn annotations_file_is_written_and_referenced_when_relative() {
+    let tmp = tempdir().unwrap();
+    let out_path = tmp
+        .path()
+        .join("artifacts")
+        .join("env-check")
+        .join("report.json");
+    let annotations_path = tmp
+        .path()
+        .join("artifacts")
+        .join("env-check")
+        .join("extras")
+        .join("annotations.txt");
+
+    let mut cmd = env_check_cmd();
+    cmd.arg("check")
+        .arg("--root")
+        .arg(fixtures_dir().join("missing_tool"))
+        .arg("--profile")
+        .arg("team")
+        .arg("--out")
+        .arg(&out_path)
+        .arg("--annotations")
+        .arg(&annotations_path)
+        .arg("--annotations-max")
+        .arg("5");
+    cmd.assert().code(2);
+
+    assert!(annotations_path.exists(), "annotations file should exist");
+    let annotations = fs::read_to_string(&annotations_path).expect("read annotations file");
+    assert!(
+        annotations.contains("::error "),
+        "annotations should contain at least one error command"
+    );
+
+    let content = fs::read_to_string(&out_path).unwrap();
+    let json: Value = serde_json::from_str(&content).unwrap();
+    let artifacts = json["artifacts"]
+        .as_array()
+        .expect("artifacts should be an array");
+    assert!(
+        artifacts
+            .iter()
+            .any(|a| a["kind"].as_str() == Some("github_annotations")),
+        "receipt should include github_annotations artifact"
+    );
 }

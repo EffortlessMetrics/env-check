@@ -9,8 +9,9 @@ homepage.workspace = true
 authors.workspace = true
 keywords.workspace = true
 categories.workspace = true
-description = "Shared domain types and stable APIs for env-check"
-readme = "../../README.md"
+description = "Shared receipt/domain types, stable finding codes, and explain registry for env-check."
+readme = "README.md"
+documentation = "https://github.com/EffortlessMetrics/env-check/tree/main/crates/env-check-types"
 
 [dependencies]
 serde.workspace = true
