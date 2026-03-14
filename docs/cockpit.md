@@ -2,6 +2,8 @@
 
 env-check emits a standard receipt and an optional human-friendly markdown summary. The cockpit
 should treat env-check as a **machine-truth** sensor and keep it informational by default.
+Cockpit should ingest `artifacts/env-check/report.json` directly as `sensor.report.v1`, without
+adapters or special cases.
 
 ## Recommended policy (default)
 

@@ -3,12 +3,23 @@
 This workspace publishes all microcrates. Publish in dependency order:
 
 1. env-check-types
-2. env-check-sources
-3. env-check-probe
-4. env-check-domain
-5. env-check-render
-6. env-check-app
-7. env-check-cli
+2. env-check-config
+3. env-check-parser-flags
+4. env-check-requirement-normalizer
+5. env-check-runtime-metadata
+6. env-check-sources-node
+7. env-check-sources-python
+8. env-check-sources-go
+9. env-check-sources-hash
+10. env-check-sources
+11. env-check-probe
+12. env-check-runtime
+13. env-check-domain
+14. env-check-evidence
+15. env-check-reporting
+16. env-check-render
+17. env-check-app
+18. env-check-cli
 
 Release binaries are produced via cargo-dist with configuration in `Cargo.toml` under
 `[workspace.metadata.dist]`.

@@ -1,0 +1,24 @@
+# env-check.toml - Local Development Configuration
+#
+# This configuration is optimized for local development workflows:
+# - Lenient profile (oss) to avoid blocking local work
+# - Never fail on findings (report only)
+# - Longer timeout for potentially slower local machines
+# - Focus on relevant parsers only
+
+profile = "oss"
+fail_on = "never"
+probe_timeout_secs = 60
+
+# Only enable parsers for tools actually used in this project
+[sources]
+enabled = ["node", "python"]
+
+# Ignore tools that may be installed but aren't relevant
+ignore_tools = ["go"]
+
+# Treat core tools as required even if sources mark them optional
+force_required = ["node", "npm", "python"]
+
+# Optional: specify hash manifests for local scripts
+hash_manifests = ["scripts/tools.sha256"]

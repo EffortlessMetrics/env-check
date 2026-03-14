@@ -1,0 +1,129 @@
+name: Feature Request
+description: Suggest a new feature or enhancement for env-check
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a new feature! Please fill out the sections below to help us understand your proposal.
+        
+        Before submitting, please check if this feature has already been requested.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Description
+      description: |
+        A clear and concise description of what problem this feature would solve.
+        Use the format: "As a [user type], I want [goal] so that [benefit]."
+      placeholder: |
+        As a developer using env-check, I want to be able to... so that I can...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed Solution
+      description: |
+        A clear and concise description of what you want to happen.
+        Include any relevant examples, CLI syntax, or configuration format.
+      placeholder: |
+        I would like env-check to support...
+        
+        Example usage:
+        ```sh
+        env-check --new-flag
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: |
+        A clear description of any alternative solutions or features you've considered.
+        This helps us understand the design space.
+      placeholder: |
+        I considered using X instead, but it doesn't work because...
+    validations:
+      required: false
+
+  - type: dropdown
+    id: feature-area
+    attributes:
+      label: Feature Area
+      description: Which area of env-check does this feature relate to?
+      options:
+        - CLI/Command-line interface
+        - Configuration parsing
+        - Tool version detection
+        - Output/Reporting
+        - GitHub Actions integration
+        - New source parser (e.g., new language support)
+        - Documentation
+        - Other (please specify in additional context)
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      description: |
+        Help us understand the scope of this feature.
+        Check all that apply.
+      options:
+        - label: This is a breaking change
+        - label: This requires changes to the receipt schema
+        - label: This requires new dependencies
+        - label: This could be implemented as a configuration option
+
+  - type: textarea
+    id: examples
+    attributes:
+      label: Examples
+      description: |
+        Provide concrete examples of how this feature would work.
+        Include example commands, configuration, or expected output.
+      placeholder: |
+        **Example configuration:**
+        ```toml
+        [tools]
+        ...
+        ```
+        
+        **Expected output:**
+        ```json
+        {...}
+        ```
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: pre-submission
+    attributes:
+      label: Pre-submission Checklist
+      description: Please confirm the following before submitting
+      options:
+        - label: I have searched the existing issues to ensure this is not a duplicate
+          required: true
+        - label: I have provided a clear problem statement and proposed solution
+          required: true
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: |
+        Add any other context about the feature request here:
+        - Links to related issues or discussions
+        - References to similar features in other tools
+        - Any other relevant information
+      placeholder: "This feature is similar to what tool X does..."
+    validations:
+      required: false

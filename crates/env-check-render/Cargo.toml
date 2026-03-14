@@ -9,8 +9,9 @@ homepage.workspace = true
 authors.workspace = true
 keywords.workspace = true
 categories.workspace = true
-description = "Markdown renderer for env-check receipts"
-readme = "../../README.md"
+description = "Deterministic renderers for env-check receipts (markdown and GitHub annotations)."
+readme = "README.md"
+documentation = "https://github.com/EffortlessMetrics/env-check/tree/main/crates/env-check-render"
 
 [dependencies]
 env-check-types.workspace = true

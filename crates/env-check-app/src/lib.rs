@@ -2,37 +2,22 @@
 //!
 //! This crate wires sources + probes + domain evaluation and writes artifacts.
 
-use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::Context;
-use env_check_domain::DomainOutcome;
+pub use env_check_config::{AppConfig, DEFAULT_PROBE_TIMEOUT_SECS, SourcesConfig, load_config};
 use env_check_probe::{
     Clock, FileLogWriter, LoggingCommandRunner, OsCommandRunner, OsPathResolver, Prober,
     Sha256Hasher, SystemClock,
 };
-use env_check_sources::ParsedSources;
+use env_check_reporting::{build_capabilities, build_data};
+pub use env_check_runtime::write_atomic;
 use env_check_types::{
-    Capabilities, CapabilityEntry, CapabilityStatus, CiMeta, Counts, FailOn, Finding, GitMeta,
-    HostMeta, Observation, PolicyConfig, Profile, ReceiptEnvelope, Requirement, RunMeta, SCHEMA_ID,
-    Severity, SourceKind, TOOL_NAME, ToolMeta, Verdict, VerdictStatus, codes,
+    CiMeta, Counts, FailOn, Finding, GitMeta, HostMeta, Observation, PolicyConfig, Profile,
+    ReceiptEnvelope, Requirement, RunMeta, SCHEMA_ID, Severity, TOOL_NAME, ToolMeta, Verdict,
+    VerdictStatus, checks, codes,
 };
-
-use serde::Deserialize;
-
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct AppConfig {
-    #[serde(default)]
-    pub profile: Option<Profile>,
-    #[serde(default)]
-    pub fail_on: Option<FailOn>,
-    #[serde(default)]
-    pub hash_manifests: Vec<String>,
-    #[serde(default)]
-    pub ignore_tools: Vec<String>,
-    #[serde(default)]
-    pub force_required: Vec<String>,
-}
 
 pub struct CheckOutput {
     pub receipt: ReceiptEnvelope,
@@ -41,11 +26,23 @@ pub struct CheckOutput {
 }
 
 /// Options for running env-check with additional configuration.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct CheckOptions {
     /// Optional path to write debug log output.
     /// This is a side artifact and does NOT affect receipt determinism.
     pub debug_log_path: Option<PathBuf>,
+    /// Timeout in seconds for individual tool probing operations.
+    /// Defaults to 30 seconds if not specified.
+    pub probe_timeout_secs: u64,
+}
+
+impl Default for CheckOptions {
+    fn default() -> Self {
+        Self {
+            debug_log_path: None,
+            probe_timeout_secs: env_check_config::DEFAULT_PROBE_TIMEOUT_SECS,
+        }
+    }
 }
 
 /// Run env-check end-to-end (backwards compatible wrapper).
@@ -95,7 +92,9 @@ pub fn run_check_with_clock(
 
     let manifests: Vec<PathBuf> = cfg.hash_manifests.iter().map(PathBuf::from).collect();
 
-    let parsed = env_check_sources::parse_all(root, &manifests);
+    let filters =
+        env_check_sources::ParserFilters::from_config(&cfg.sources.enabled, &cfg.sources.disabled)?;
+    let parsed = env_check_sources::parse_all_with_filters(root, &manifests, &filters);
     let sources_used: Vec<String> = parsed.sources_used.iter().map(|s| s.path.clone()).collect();
 
     // Normalize requirements for determinism and policy overrides.
@@ -120,7 +119,7 @@ pub fn run_check_with_clock(
         .max(0) as u64;
 
     // Build receipt envelope.
-    let data = build_data(&policy, &parsed, &requirements, &outcome);
+    let data = build_data(&policy, &parsed, &requirements, &observations, &outcome);
     let git = detect_git(root);
     let capabilities = build_capabilities(&parsed, &requirements, git.as_ref());
 
@@ -170,183 +169,28 @@ fn probe_requirements(
     requirements: &[Requirement],
     options: &CheckOptions,
 ) -> anyhow::Result<Vec<Observation>> {
+    let timeout = Duration::from_secs(options.probe_timeout_secs);
     if let Some(log_path) = &options.debug_log_path {
         // Use logging command runner
         let log_writer = FileLogWriter::new(log_path)
             .with_context(|| format!("create debug log at {}", log_path.display()))?;
         let logging_runner = LoggingCommandRunner::new(OsCommandRunner, log_writer);
-        let prober =
-            Prober::new(logging_runner, OsPathResolver, Sha256Hasher).context("init prober")?;
+        let prober = Prober::with_timeout(logging_runner, OsPathResolver, Sha256Hasher, timeout)
+            .context("init prober")?;
         Ok(requirements.iter().map(|r| prober.probe(root, r)).collect())
     } else {
         // Use regular command runner (no logging)
-        let prober =
-            Prober::new(OsCommandRunner, OsPathResolver, Sha256Hasher).context("init prober")?;
+        let prober = Prober::with_timeout(OsCommandRunner, OsPathResolver, Sha256Hasher, timeout)
+            .context("init prober")?;
         Ok(requirements.iter().map(|r| prober.probe(root, r)).collect())
     }
 }
 
-fn load_config(root: &Path, config_path: Option<&Path>) -> anyhow::Result<AppConfig> {
-    let path = match config_path {
-        Some(p) => p.to_path_buf(),
-        None => {
-            let p = root.join("env-check.toml");
-            if p.exists() {
-                p
-            } else {
-                return Ok(AppConfig::default());
-            }
-        }
-    };
-
-    let text =
-        fs::read_to_string(&path).with_context(|| format!("read config {}", path.display()))?;
-    let cfg: AppConfig = toml::from_str(&text).with_context(|| "parse env-check.toml")?;
-    Ok(cfg)
-}
-
 fn normalize_requirements(
-    mut reqs: Vec<env_check_types::Requirement>,
+    reqs: Vec<env_check_types::Requirement>,
     cfg: &AppConfig,
 ) -> Vec<env_check_types::Requirement> {
-    // ignore tools
-    reqs.retain(|r| !cfg.ignore_tools.iter().any(|t| t == &r.tool));
-
-    // force required
-    for r in &mut reqs {
-        if cfg.force_required.iter().any(|t| t == &r.tool) {
-            r.required = true;
-        }
-    }
-
-    // Deduplicate by (tool, probe_kind). Keep first occurrence (sources are already in deterministic order).
-    let mut out: Vec<env_check_types::Requirement> = vec![];
-    for r in reqs {
-        if out
-            .iter()
-            .any(|x| x.tool == r.tool && x.probe_kind == r.probe_kind)
-        {
-            continue;
-        }
-        out.push(r);
-    }
-    out
-}
-
-fn build_data(
-    policy: &PolicyConfig,
-    parsed: &ParsedSources,
-    requirements: &[Requirement],
-    outcome: &DomainOutcome,
-) -> serde_json::Value {
-    use serde_json::json;
-    use std::collections::BTreeSet;
-
-    let source_kinds: Vec<String> = parsed
-        .sources_used
-        .iter()
-        .map(|s| source_kind_to_string(&s.kind))
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect();
-
-    let probe_kinds: Vec<String> = requirements
-        .iter()
-        .map(|r| probe_kind_to_string(&r.probe_kind))
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect();
-
-    json!({
-        "profile": match policy.profile { Profile::Oss => "oss", Profile::Team => "team", Profile::Strict => "strict" },
-        "fail_on": match policy.fail_on { FailOn::Error => "error", FailOn::Warn => "warn", FailOn::Never => "never" },
-        "sources_used": parsed.sources_used.iter().map(|s| s.path.clone()).collect::<Vec<_>>(),
-        "requirements_total": outcome.requirements_total,
-        "requirements_failed": outcome.requirements_failed,
-        "truncated": outcome.truncated,
-        "observed": {
-            "source_kinds": source_kinds,
-            "probe_kinds": probe_kinds,
-        },
-    })
-}
-
-/// Build capabilities block declaring what the sensor actually checked.
-///
-/// This enables "No Green By Omission" - consumers can distinguish between
-/// "we checked and found nothing wrong" vs "we didn't check at all".
-fn build_capabilities(
-    parsed: &ParsedSources,
-    requirements: &[Requirement],
-    git: Option<&GitMeta>,
-) -> Capabilities {
-    Capabilities {
-        git: CapabilityEntry {
-            status: if git.is_some() {
-                CapabilityStatus::Available
-            } else {
-                CapabilityStatus::Unavailable
-            },
-            reason: if git.is_none() {
-                Some("not_a_git_repo".into())
-            } else {
-                None
-            },
-        },
-        baseline: CapabilityEntry {
-            status: CapabilityStatus::Skipped,
-            reason: Some("not_applicable".into()),
-        },
-        inputs: CapabilityEntry {
-            status: if parsed.sources_used.is_empty() {
-                CapabilityStatus::Unavailable
-            } else {
-                CapabilityStatus::Available
-            },
-            reason: if parsed.sources_used.is_empty() {
-                Some("no_sources_found".into())
-            } else {
-                None
-            },
-        },
-        engine: CapabilityEntry {
-            status: if requirements.is_empty() {
-                CapabilityStatus::Skipped
-            } else {
-                CapabilityStatus::Available
-            },
-            reason: if requirements.is_empty() {
-                Some("no_requirements".into())
-            } else {
-                None
-            },
-        },
-    }
-}
-
-/// Map SourceKind enum to stable string identifier for capabilities.
-fn source_kind_to_string(kind: &SourceKind) -> String {
-    match kind {
-        SourceKind::ToolVersions => "tool-versions".to_string(),
-        SourceKind::MiseToml => "mise".to_string(),
-        SourceKind::RustToolchain => "rust-toolchain".to_string(),
-        SourceKind::HashManifest => "hash-manifest".to_string(),
-        SourceKind::NodeVersion => "node-version".to_string(),
-        SourceKind::Nvmrc => "nvmrc".to_string(),
-        SourceKind::PackageJson => "package-json".to_string(),
-        SourceKind::PythonVersion => "python-version".to_string(),
-        SourceKind::PyprojectToml => "pyproject".to_string(),
-        SourceKind::GoMod => "go-mod".to_string(),
-    }
-}
-
-/// Map ProbeKind enum to stable string identifier for capabilities.
-fn probe_kind_to_string(kind: &env_check_types::ProbeKind) -> String {
-    match kind {
-        env_check_types::ProbeKind::PathTool => "path".to_string(),
-        env_check_types::ProbeKind::RustupToolchain => "rustup".to_string(),
-        env_check_types::ProbeKind::FileHash => "hash".to_string(),
-    }
+    env_check_requirement_normalizer::normalize_requirements(reqs, cfg)
 }
 
 /// Build a minimal receipt for tool/runtime errors.
@@ -389,7 +233,7 @@ pub fn runtime_error_receipt_with_clock(message: &str, clock: &dyn Clock) -> Rec
         },
         findings: vec![Finding {
             severity: Severity::Error,
-            check_id: Some("tool.runtime".into()),
+            check_id: Some(checks::RUNTIME.into()),
             code: codes::TOOL_RUNTIME_ERROR.into(),
             message: message.to_string(),
             location: None,
@@ -403,261 +247,64 @@ pub fn runtime_error_receipt_with_clock(message: &str, clock: &dyn Clock) -> Rec
     }
 }
 
-/// Write a file atomically: write temp + rename.
-///
-/// This avoids partial artifacts in CI.
-pub fn write_atomic(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
-    let parent = path.parent().context("no parent dir")?;
-    fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
-
-    let tmp = path.with_extension("tmp");
-    fs::write(&tmp, bytes).with_context(|| format!("write {}", tmp.display()))?;
-    fs::rename(&tmp, path)
-        .with_context(|| format!("rename {} -> {}", tmp.display(), path.display()))?;
-    Ok(())
-}
-
 /// Detect host metadata (OS, arch, hostname).
 fn detect_host() -> Option<HostMeta> {
-    Some(HostMeta {
-        os: std::env::consts::OS.to_string(),
-        arch: std::env::consts::ARCH.to_string(),
-        hostname: hostname::get().ok().and_then(|h| h.into_string().ok()),
-    })
+    env_check_runtime::detect_host()
 }
 
 /// Detect CI provider metadata via environment variables.
 fn detect_ci() -> Option<CiMeta> {
-    detect_ci_from_env(|key| std::env::var(key).ok())
+    env_check_runtime::detect_ci()
 }
 
-/// Inner implementation that accepts an env-lookup closure for testability.
+#[cfg(test)]
 fn detect_ci_from_env(env: impl Fn(&str) -> Option<String>) -> Option<CiMeta> {
-    // GitHub Actions
-    if env("GITHUB_ACTIONS").is_some() {
-        return Some(CiMeta {
-            provider: "github".to_string(),
-            job: env("GITHUB_JOB"),
-            run_id: env("GITHUB_RUN_ID"),
-            workflow: env("GITHUB_WORKFLOW").filter(|s| !s.is_empty()),
-            repository: env("GITHUB_REPOSITORY").filter(|s| !s.is_empty()),
-            git_ref: env("GITHUB_REF").filter(|s| !s.is_empty()),
-            sha: env("GITHUB_SHA").filter(|s| !s.is_empty()),
-        });
-    }
-    // GitLab CI
-    if env("GITLAB_CI").is_some() {
-        return Some(CiMeta {
-            provider: "gitlab".to_string(),
-            job: env("CI_JOB_NAME"),
-            run_id: env("CI_JOB_ID"),
-            workflow: env("CI_PIPELINE_NAME").filter(|s| !s.is_empty()),
-            repository: env("CI_PROJECT_PATH").filter(|s| !s.is_empty()),
-            git_ref: env("CI_COMMIT_REF_NAME").filter(|s| !s.is_empty()),
-            sha: env("CI_COMMIT_SHA").filter(|s| !s.is_empty()),
-        });
-    }
-    // CircleCI
-    if env("CIRCLECI").is_some() {
-        return Some(CiMeta {
-            provider: "circleci".to_string(),
-            job: env("CIRCLE_JOB"),
-            run_id: env("CIRCLE_BUILD_NUM"),
-            workflow: env("CIRCLE_WORKFLOW_ID").filter(|s| !s.is_empty()),
-            repository: env("CIRCLE_PROJECT_REPONAME").filter(|s| !s.is_empty()),
-            git_ref: env("CIRCLE_BRANCH").filter(|s| !s.is_empty()),
-            sha: env("CIRCLE_SHA1").filter(|s| !s.is_empty()),
-        });
-    }
-    // Azure Pipelines
-    if env("TF_BUILD").is_some() {
-        return Some(CiMeta {
-            provider: "azure".to_string(),
-            job: env("SYSTEM_JOBDISPLAYNAME"),
-            run_id: env("BUILD_BUILDID"),
-            workflow: env("BUILD_DEFINITIONNAME").filter(|s| !s.is_empty()),
-            repository: env("BUILD_REPOSITORY_NAME").filter(|s| !s.is_empty()),
-            git_ref: env("BUILD_SOURCEBRANCH").filter(|s| !s.is_empty()),
-            sha: env("BUILD_SOURCEVERSION").filter(|s| !s.is_empty()),
-        });
-    }
-    // Generic CI detection
-    if env("CI").is_some() {
-        return Some(CiMeta {
-            provider: "unknown".to_string(),
-            job: None,
-            run_id: None,
-            workflow: None,
-            repository: None,
-            git_ref: None,
-            sha: None,
-        });
-    }
-    None
+    env_check_runtime::detect_ci_from_env(env)
 }
 
-/// Metadata extracted from a GitHub pull_request event.
-#[derive(Debug, Default)]
-struct GitHubPrEvent {
-    base_sha: Option<String>,
-    head_sha: Option<String>,
-    pr_number: Option<u64>,
-    base_ref: Option<String>,
-}
+#[cfg(test)]
+type GitHubPrEvent = env_check_runtime::GitHubPrEvent;
 
-/// Parse GITHUB_EVENT_PATH JSON when it exists and is a pull_request event.
-/// Returns None fields gracefully if file doesn't exist, isn't PR event, or is malformed.
+#[cfg(test)]
 fn parse_github_event() -> GitHubPrEvent {
-    parse_github_event_from_env(std::env::var("GITHUB_EVENT_PATH").ok())
+    env_check_runtime::parse_github_event()
 }
 
-/// Internal helper that takes the path as argument for testability.
+#[cfg(test)]
 fn parse_github_event_from_env(event_path: Option<String>) -> GitHubPrEvent {
-    let path = match event_path {
-        Some(p) if !p.is_empty() => p,
-        _ => return GitHubPrEvent::default(),
-    };
-
-    parse_github_event_file(&path)
+    env_check_runtime::parse_github_event_from_env(event_path)
 }
 
-/// Parse the GitHub event JSON file at the given path.
+#[cfg(test)]
 fn parse_github_event_file(path: &str) -> GitHubPrEvent {
-    let content = match fs::read_to_string(path) {
-        Ok(c) => c,
-        Err(_) => return GitHubPrEvent::default(),
-    };
-
-    parse_github_event_json(&content)
+    env_check_runtime::parse_github_event_file(path)
 }
 
-/// Parse GitHub event JSON content and extract PR metadata.
+#[cfg(test)]
 fn parse_github_event_json(content: &str) -> GitHubPrEvent {
-    let json: serde_json::Value = match serde_json::from_str(content) {
-        Ok(v) => v,
-        Err(_) => return GitHubPrEvent::default(),
-    };
-
-    // Only extract PR metadata if this is a pull_request event
-    let pr = match json.get("pull_request") {
-        Some(pr) => pr,
-        None => return GitHubPrEvent::default(),
-    };
-
-    GitHubPrEvent {
-        base_sha: pr
-            .get("base")
-            .and_then(|b| b.get("sha"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
-        head_sha: pr
-            .get("head")
-            .and_then(|h| h.get("sha"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
-        pr_number: pr.get("number").and_then(|v| v.as_u64()),
-        base_ref: pr
-            .get("base")
-            .and_then(|b| b.get("ref"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
-    }
+    env_check_runtime::parse_github_event_json(content)
 }
 
-/// Compute merge-base between HEAD and the base branch.
-/// Returns None if git command fails (doesn't fail the whole run).
+#[cfg(test)]
 fn compute_merge_base(root: &Path, base_ref: Option<&str>) -> Option<String> {
-    use std::process::Command;
-
-    fn ref_exists(root: &Path, reference: &str) -> bool {
-        Command::new("git")
-            .args(["rev-parse", "--verify", reference])
-            .current_dir(root)
-            .output()
-            .ok()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-    }
-
-    let base_name = base_ref.unwrap_or("main");
-    let candidates = [format!("origin/{}", base_name), base_name.to_string()];
-    let base_branch = candidates
-        .iter()
-        .find(|r| ref_exists(root, r))
-        .map(|r| r.as_str())?;
-
-    Command::new("git")
-        .args(["merge-base", "HEAD", base_branch])
-        .current_dir(root)
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .filter(|s| !s.is_empty())
+    env_check_runtime::compute_merge_base(root, base_ref)
 }
 
 /// Detect git repository metadata by shelling out to git.
 fn detect_git(root: &Path) -> Option<GitMeta> {
-    use std::process::Command;
-
-    fn git(root: &Path, args: &[&str]) -> Option<String> {
-        Command::new("git")
-            .args(args)
-            .current_dir(root)
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-            .filter(|s| !s.is_empty())
-    }
-
-    // Check if in a git repo
-    let _ = git(root, &["rev-parse", "--git-dir"])?;
-
-    // Parse GitHub event for PR metadata
-    let gh_event = parse_github_event();
-
-    // Determine base_ref from multiple sources (prefer GitHub event, then env vars)
-    let base_ref = gh_event
-        .base_ref
-        .clone()
-        .or_else(|| {
-            std::env::var("GITHUB_BASE_REF")
-                .ok()
-                .filter(|s| !s.is_empty())
-        })
-        .or_else(|| {
-            std::env::var("CI_MERGE_REQUEST_TARGET_BRANCH_NAME")
-                .ok()
-                .filter(|s| !s.is_empty())
-        });
-
-    // Compute merge-base if git is available
-    let merge_base = compute_merge_base(root, base_ref.as_deref());
-
-    // Use GitHub event SHA if available, otherwise query git
-    let head_sha = gh_event
-        .head_sha
-        .clone()
-        .or_else(|| std::env::var("GITHUB_SHA").ok().filter(|s| !s.is_empty()))
-        .or_else(|| git(root, &["rev-parse", "HEAD"]));
-
-    // Use GitHub event PR number if available, otherwise try env vars
-    Some(GitMeta {
-        repo: git(root, &["config", "--get", "remote.origin.url"]),
-        base_ref,
-        head_ref: git(root, &["rev-parse", "--abbrev-ref", "HEAD"]),
-        base_sha: gh_event.base_sha,
-        head_sha,
-        merge_base,
-        pr_number: gh_event.pr_number,
-    })
+    env_check_runtime::detect_git(root)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use env_check_types::{ProbeKind, SourceKind, SourceRef};
+    use env_check_domain::DomainOutcome;
+    use env_check_sources::ParsedSources;
+    use env_check_types::{
+        CapabilityStatus, Observation, ProbeKind, ProbeRecord, SourceKind, SourceRef,
+        VersionObservation,
+    };
+    use std::fs;
     use std::process::Command;
 
     /// Get the path to a test fixture file.
@@ -1039,7 +686,7 @@ mod tests {
         let finding = &receipt.findings[0];
         assert_eq!(finding.severity, Severity::Error);
         assert_eq!(finding.code, codes::TOOL_RUNTIME_ERROR);
-        assert_eq!(finding.check_id.as_deref(), Some("tool.runtime"));
+        assert_eq!(finding.check_id.as_deref(), Some(checks::RUNTIME));
         assert_eq!(finding.message, "boom");
         assert!(finding.location.is_none());
     }
@@ -1133,13 +780,36 @@ force_required = ["go"]
     }
 
     #[test]
+    fn load_config_parses_source_filters() {
+        let root = temp_root_dir("config-sources");
+        let path = root.join("env-check.toml");
+        let text = r#"
+[sources]
+enabled = ["node", "python"]
+disabled = ["python"]
+"#;
+        fs::write(&path, text).expect("write config");
+
+        let cfg = load_config(&root, None).expect("load config");
+        assert_eq!(
+            cfg.sources.enabled,
+            vec!["node".to_string(), "python".to_string()]
+        );
+        assert_eq!(cfg.sources.disabled, vec!["python".to_string()]);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn normalize_requirements_applies_ignore_force_and_dedupe() {
         let cfg = AppConfig {
             profile: None,
             fail_on: None,
+            sources: SourcesConfig::default(),
             hash_manifests: vec![],
             ignore_tools: vec!["python".into()],
             force_required: vec!["go".into()],
+            probe_timeout_secs: None,
         };
 
         let reqs = vec![
@@ -1208,6 +878,7 @@ force_required = ["go"]
             ],
             requirements: vec![],
             findings: vec![],
+            source_data: std::collections::BTreeMap::new(),
         };
 
         let requirements = vec![
@@ -1243,7 +914,37 @@ force_required = ["go"]
             max_findings: Some(100),
         };
 
-        let data = build_data(&policy, &parsed, &requirements, &outcome);
+        let observations = vec![
+            Observation {
+                tool: "node".into(),
+                present: true,
+                version: Some(VersionObservation {
+                    parsed: Some("20.1.0".into()),
+                    raw: "node v20.1.0".into(),
+                }),
+                hash_ok: None,
+                probe: ProbeRecord {
+                    cmd: vec!["node".into(), "--version".into()],
+                    exit: Some(0),
+                    stdout: "node v20.1.0".into(),
+                    stderr: String::new(),
+                },
+            },
+            Observation {
+                tool: "file:scripts/tool.sh".into(),
+                present: true,
+                version: None,
+                hash_ok: Some(true),
+                probe: ProbeRecord {
+                    cmd: vec![],
+                    exit: Some(0),
+                    stdout: "sha256 scripts/tool.sh = deadbeef".into(),
+                    stderr: String::new(),
+                },
+            },
+        ];
+
+        let data = build_data(&policy, &parsed, &requirements, &observations, &outcome);
         let observed = data.get("observed").expect("observed block");
 
         let source_kinds = observed["source_kinds"].as_array().expect("source_kinds");
@@ -1264,6 +965,73 @@ force_required = ["go"]
         assert_eq!(data["fail_on"], "warn");
         assert_eq!(data["requirements_total"], 2);
         assert_eq!(data["requirements_failed"], 0);
+        assert!(
+            data["probes"].as_array().is_some(),
+            "data.probes should be present"
+        );
+        assert!(
+            data["dependencies"].is_object(),
+            "data.dependencies should be present"
+        );
+        let dep_nodes = data["dependencies"]["nodes"]
+            .as_array()
+            .expect("dependencies.nodes should be an array");
+        let dep_node_list: Vec<String> = dep_nodes
+            .iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect();
+        assert_eq!(dep_node_list, vec!["file:scripts/tool.sh", "node"]);
+        let dep_edges = data["dependencies"].get("edges").and_then(|v| v.as_array());
+        assert!(
+            dep_edges.is_none() || dep_edges.unwrap().is_empty(),
+            "no implicit deps expected in fixture"
+        );
+    }
+
+    #[test]
+    fn build_data_includes_source_data_when_available() {
+        let mut source_data = std::collections::BTreeMap::new();
+        source_data.insert(
+            ".mise.toml".to_string(),
+            serde_json::json!({
+                "kind": "mise",
+                "tools": {
+                    "node": {
+                        "normalized_tool": "node",
+                        "value": ["20", "18"]
+                    }
+                }
+            }),
+        );
+
+        let parsed = ParsedSources {
+            sources_used: vec![SourceRef {
+                kind: SourceKind::MiseToml,
+                path: ".mise.toml".into(),
+            }],
+            requirements: vec![],
+            findings: vec![],
+            source_data,
+        };
+
+        let outcome = DomainOutcome {
+            findings: vec![],
+            verdict: Verdict {
+                status: VerdictStatus::Pass,
+                counts: Counts::default(),
+                reasons: vec![],
+            },
+            truncated: false,
+            requirements_total: 0,
+            requirements_failed: 0,
+        };
+
+        let data = build_data(&PolicyConfig::default(), &parsed, &[], &[], &outcome);
+        assert_eq!(data["source_data"][".mise.toml"]["kind"], "mise");
+        assert_eq!(
+            data["source_data"][".mise.toml"]["tools"]["node"]["value"][0],
+            "20"
+        );
     }
 
     #[test]
@@ -1285,6 +1053,7 @@ force_required = ["go"]
             }],
             requirements: vec![],
             findings: vec![],
+            source_data: std::collections::BTreeMap::new(),
         };
         let reqs = vec![make_req("node", "20", true, ProbeKind::PathTool)];
         let git = GitMeta {
@@ -1311,6 +1080,7 @@ force_required = ["go"]
             }],
             requirements: vec![],
             findings: vec![],
+            source_data: std::collections::BTreeMap::new(),
         };
 
         let caps = build_capabilities(&parsed, &[], None);
@@ -1348,7 +1118,7 @@ force_required = ["go"]
         ];
 
         for (kind, expected) in variants {
-            assert_eq!(source_kind_to_string(&kind), expected);
+            assert_eq!(env_check_evidence::source_kind_id(&kind), expected);
         }
     }
 
@@ -1361,7 +1131,7 @@ force_required = ["go"]
         ];
 
         for (kind, expected) in variants {
-            assert_eq!(probe_kind_to_string(&kind), expected);
+            assert_eq!(env_check_evidence::probe_kind_id(&kind), expected);
         }
     }
 
@@ -1402,6 +1172,7 @@ force_required = ["go"]
             .join("raw.log");
         let options = CheckOptions {
             debug_log_path: Some(log_path.clone()),
+            probe_timeout_secs: 30,
         };
 
         let observations = probe_requirements(&root, &[], &options).expect("probe");

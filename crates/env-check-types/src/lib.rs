@@ -377,6 +377,99 @@ pub mod checks {
     pub const VERSION: &str = "env.version";
     pub const HASH: &str = "env.hash";
     pub const SOURCE_PARSE: &str = "env.source_parse";
+    pub const RUNTIME: &str = "tool.runtime";
+}
+
+/// A stable explain-registry entry for codes/check IDs exposed via CLI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExplainEntry {
+    pub id: &'static str,
+    pub message: &'static str,
+}
+
+/// Stable list of all built-in finding codes.
+pub const KNOWN_CODES: &[&str] = &[
+    codes::ENV_MISSING_TOOL,
+    codes::ENV_VERSION_MISMATCH,
+    codes::ENV_HASH_MISMATCH,
+    codes::ENV_TOOLCHAIN_MISSING,
+    codes::ENV_SOURCE_PARSE_ERROR,
+    codes::TOOL_RUNTIME_ERROR,
+];
+
+/// Stable list of all built-in check IDs.
+pub const KNOWN_CHECK_IDS: &[&str] = &[
+    checks::PRESENCE,
+    checks::VERSION,
+    checks::HASH,
+    checks::SOURCE_PARSE,
+    checks::RUNTIME,
+];
+
+/// Returned when no explain entry exists for a requested identifier.
+pub const UNKNOWN_EXPLAIN_MESSAGE: &str = "Unknown code/check_id. If this value was emitted, the explain registry is missing an entry (bug).";
+
+const EXPLAIN_ENTRIES: &[ExplainEntry] = &[
+    // Codes
+    ExplainEntry {
+        id: codes::ENV_MISSING_TOOL,
+        message: "The tool is not on PATH. Install it and ensure the runner PATH includes its bin directory.",
+    },
+    ExplainEntry {
+        id: codes::ENV_VERSION_MISMATCH,
+        message: "The tool is present but its version does not satisfy the repo constraint. Install a compatible version or adjust the repo constraint.",
+    },
+    ExplainEntry {
+        id: codes::ENV_HASH_MISMATCH,
+        message: "A repo-local binary does not match the hash manifest. Re-fetch/restore the binary so it matches repo truth.",
+    },
+    ExplainEntry {
+        id: codes::ENV_TOOLCHAIN_MISSING,
+        message: "The repo requires a rust toolchain (rust-toolchain.toml), but rustup or the requested toolchain is missing. Install rustup and the requested toolchain.",
+    },
+    ExplainEntry {
+        id: codes::ENV_SOURCE_PARSE_ERROR,
+        message: "A supported source file exists but could not be parsed. Fix its syntax or remove it temporarily.",
+    },
+    ExplainEntry {
+        id: codes::TOOL_RUNTIME_ERROR,
+        message: "env-check could not execute a probe command. Ensure the tool is executable and the runner allows process execution.",
+    },
+    // Check IDs
+    ExplainEntry {
+        id: checks::PRESENCE,
+        message: "The tool is not on PATH. Install it and ensure the runner PATH includes its bin directory.",
+    },
+    ExplainEntry {
+        id: checks::VERSION,
+        message: "The tool is present but its version does not satisfy the repo constraint. Install a compatible version or adjust the repo constraint.",
+    },
+    ExplainEntry {
+        id: checks::HASH,
+        message: "A repo-local binary does not match the hash manifest. Re-fetch/restore the binary so it matches repo truth.",
+    },
+    ExplainEntry {
+        id: checks::SOURCE_PARSE,
+        message: "A supported source file exists but could not be parsed. Fix its syntax or remove it temporarily.",
+    },
+    ExplainEntry {
+        id: checks::RUNTIME,
+        message: "env-check could not execute a probe command. Ensure the tool is executable and the runner allows process execution.",
+    },
+];
+
+/// Look up explain text for a code or check ID.
+pub fn explain_message(id: &str) -> &'static str {
+    EXPLAIN_ENTRIES
+        .iter()
+        .find(|entry| entry.id == id)
+        .map(|entry| entry.message)
+        .unwrap_or(UNKNOWN_EXPLAIN_MESSAGE)
+}
+
+/// Return all explain entries in deterministic display order.
+pub fn explain_entries() -> &'static [ExplainEntry] {
+    EXPLAIN_ENTRIES
 }
 
 /// Sorting key used to ensure deterministic findings order.
@@ -673,6 +766,47 @@ mod tests {
         assert!(matches!(cfg.profile, Profile::Oss));
         assert!(matches!(cfg.fail_on, FailOn::Error));
         assert_eq!(cfg.max_findings, Some(100));
+    }
+
+    // =========================================================================
+    // Explain registry tests
+    // =========================================================================
+
+    #[test]
+    fn explain_message_supports_codes_and_check_ids() {
+        assert!(explain_message(codes::ENV_MISSING_TOOL).contains("PATH"));
+        assert!(explain_message(checks::PRESENCE).contains("PATH"));
+        assert!(explain_message(codes::ENV_VERSION_MISMATCH).contains("version"));
+        assert!(explain_message(checks::RUNTIME).contains("execute"));
+    }
+
+    #[test]
+    fn explain_message_returns_unknown_fallback() {
+        assert_eq!(
+            explain_message("totally.unknown.id"),
+            UNKNOWN_EXPLAIN_MESSAGE
+        );
+    }
+
+    #[test]
+    fn explain_registry_covers_known_codes_and_check_ids() {
+        for code in KNOWN_CODES {
+            let msg = explain_message(code);
+            assert_ne!(
+                msg, UNKNOWN_EXPLAIN_MESSAGE,
+                "missing explain entry for code {}",
+                code
+            );
+        }
+
+        for check_id in KNOWN_CHECK_IDS {
+            let msg = explain_message(check_id);
+            assert_ne!(
+                msg, UNKNOWN_EXPLAIN_MESSAGE,
+                "missing explain entry for check_id {}",
+                check_id
+            );
+        }
     }
 
     // =========================================================================

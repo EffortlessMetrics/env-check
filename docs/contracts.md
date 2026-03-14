@@ -33,7 +33,7 @@ See: `schemas/sensor.report.v1.schema.json`.
 
 - `schema == "sensor.report.v1"`
 - `tool.name == "env-check"`
-- `data` shape (sources used, policy hints, truncation markers)
+- `data` shape (sources used, policy hints, observed capabilities, probe transcript condensation, dependency graph, truncation markers, source-specific preserved data in `source_data`)
 
 See: `schemas/env-check.report.v1.json`.
 
@@ -49,6 +49,7 @@ These are stable external identifiers. Treat changes as breaking.
 - `tool.runtime_error` (shared)
 
 Each emitted code must have an `env-check explain` entry.
+The canonical explain registry lives in `env-check-types` and is consumed by the CLI.
 
 ## Compatibility contract
 

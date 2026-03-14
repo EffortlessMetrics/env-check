@@ -7,7 +7,8 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
+use std::time::Duration;
 
 use anyhow::Context;
 use env_check_types::{
@@ -16,7 +17,12 @@ use env_check_types::{
 use regex::Regex;
 
 pub trait CommandRunner: Send + Sync {
-    fn run(&self, cwd: &Path, argv: &[String]) -> Result<CmdOutput, EnvCheckError>;
+    fn run(
+        &self,
+        cwd: &Path,
+        argv: &[String],
+        timeout: Duration,
+    ) -> Result<CmdOutput, EnvCheckError>;
 }
 
 #[derive(Debug, Clone)]
@@ -29,7 +35,12 @@ pub struct CmdOutput {
 pub struct OsCommandRunner;
 
 impl CommandRunner for OsCommandRunner {
-    fn run(&self, cwd: &Path, argv: &[String]) -> Result<CmdOutput, EnvCheckError> {
+    fn run(
+        &self,
+        cwd: &Path,
+        argv: &[String],
+        timeout: Duration,
+    ) -> Result<CmdOutput, EnvCheckError> {
         if argv.is_empty() {
             return Err(EnvCheckError::Runtime("empty argv".into()));
         }
@@ -38,14 +49,34 @@ impl CommandRunner for OsCommandRunner {
         cmd.args(&argv[1..]);
         cmd.current_dir(cwd);
 
-        let out = cmd
-            .output()
+        let mut child = cmd
+            .spawn()
             .map_err(|e| EnvCheckError::Runtime(e.to_string()))?;
-        Ok(CmdOutput {
-            exit: out.status.code(),
-            stdout: String::from_utf8_lossy(&out.stdout).to_string(),
-            stderr: String::from_utf8_lossy(&out.stderr).to_string(),
-        })
+
+        match wait_timeout::ChildExt::wait_timeout(&mut child, timeout) {
+            Ok(Some(_status)) => {
+                // Process exited within timeout
+                let output = child
+                    .wait_with_output()
+                    .map_err(|e| EnvCheckError::Runtime(e.to_string()))?;
+                Ok(CmdOutput {
+                    exit: output.status.code(),
+                    stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+                    stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+                })
+            }
+            Ok(None) => {
+                // Timeout occurred - kill the process
+                let _ = child.kill();
+                let _ = child.wait();
+                Err(EnvCheckError::Runtime(format!(
+                    "command timed out after {}s: {}",
+                    timeout.as_secs(),
+                    argv.join(" ")
+                )))
+            }
+            Err(e) => Err(EnvCheckError::Runtime(e.to_string())),
+        }
     }
 }
 
@@ -94,16 +125,31 @@ impl Clock for SystemClock {
     }
 }
 
+/// Default probe timeout in seconds.
+pub const DEFAULT_PROBE_TIMEOUT_SECS: u64 = 30;
+
 #[derive(Clone)]
 pub struct Prober<R: CommandRunner, P: PathResolver, H: Hasher> {
     runner: R,
     path: P,
     hasher: H,
     version_re: Regex,
+    timeout: Duration,
 }
 
 impl<R: CommandRunner, P: PathResolver, H: Hasher> Prober<R, P, H> {
+    /// Create a new Prober with default timeout (30 seconds).
     pub fn new(runner: R, path: P, hasher: H) -> anyhow::Result<Self> {
+        Self::with_timeout(
+            runner,
+            path,
+            hasher,
+            Duration::from_secs(DEFAULT_PROBE_TIMEOUT_SECS),
+        )
+    }
+
+    /// Create a new Prober with a custom timeout.
+    pub fn with_timeout(runner: R, path: P, hasher: H, timeout: Duration) -> anyhow::Result<Self> {
         // Conservative semver-ish matcher. We intentionally don't parse prerelease/build.
         let version_re =
             Regex::new(r"(\d+)(?:\.(\d+))?(?:\.(\d+))?").context("compile version regex")?;
@@ -112,6 +158,7 @@ impl<R: CommandRunner, P: PathResolver, H: Hasher> Prober<R, P, H> {
             path,
             hasher,
             version_re,
+            timeout,
         })
     }
 
@@ -135,7 +182,7 @@ impl<R: CommandRunner, P: PathResolver, H: Hasher> Prober<R, P, H> {
         let version = if present {
             let argv = vec![req.tool.clone(), "--version".to_string()];
             record.cmd = argv.clone();
-            match self.runner.run(root, &argv) {
+            match self.runner.run(root, &argv, self.timeout) {
                 Ok(out) => {
                     record.exit = out.exit;
                     record.stdout = out.stdout.clone();
@@ -184,7 +231,7 @@ impl<R: CommandRunner, P: PathResolver, H: Hasher> Prober<R, P, H> {
         };
 
         let version = if present {
-            match self.runner.run(root, &argv) {
+            match self.runner.run(root, &argv, self.timeout) {
                 Ok(out) => {
                     record.exit = out.exit;
                     record.stdout = out.stdout.clone();
@@ -347,15 +394,22 @@ impl<R: CommandRunner, W: DebugLogWriter> LoggingCommandRunner<R, W> {
 }
 
 impl<R: CommandRunner, W: DebugLogWriter> CommandRunner for LoggingCommandRunner<R, W> {
-    fn run(&self, cwd: &Path, argv: &[String]) -> Result<CmdOutput, EnvCheckError> {
+    fn run(
+        &self,
+        cwd: &Path,
+        argv: &[String],
+        timeout: Duration,
+    ) -> Result<CmdOutput, EnvCheckError> {
         let timestamp = chrono::Utc::now().to_rfc3339();
-        let cmd_str = argv.join(" ");
+        let cmd_str = redact_sensitive(&argv.join(" "));
 
         self.writer
             .write_line(&format!("[{}] EXEC: {}", timestamp, cmd_str));
         self.writer.write_line(&format!("  cwd: {}", cwd.display()));
+        self.writer
+            .write_line(&format!("  timeout: {}s", timeout.as_secs()));
 
-        let result = self.inner.run(cwd, argv);
+        let result = self.inner.run(cwd, argv, timeout);
 
         match &result {
             Ok(output) => {
@@ -377,7 +431,10 @@ impl<R: CommandRunner, W: DebugLogWriter> CommandRunner for LoggingCommandRunner
                 }
             }
             Err(e) => {
-                self.writer.write_line(&format!("  error: {}", e));
+                self.writer.write_line(&format!(
+                    "  error: {}",
+                    truncate_for_log(&e.to_string(), 200)
+                ));
             }
         }
 
@@ -390,7 +447,8 @@ impl<R: CommandRunner, W: DebugLogWriter> CommandRunner for LoggingCommandRunner
 
 /// Truncate a string for logging purposes, replacing newlines and limiting length.
 fn truncate_for_log(s: &str, max_len: usize) -> String {
-    let cleaned: String = s
+    let redacted = redact_sensitive(s);
+    let cleaned: String = redacted
         .chars()
         .map(|c| if c == '\n' || c == '\r' { ' ' } else { c })
         .collect();
@@ -400,6 +458,38 @@ fn truncate_for_log(s: &str, max_len: usize) -> String {
     } else {
         format!("{}...", &trimmed[..max_len])
     }
+}
+
+// Redact common secret-like patterns before writing debug logs.
+static ENV_ASSIGN_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i)\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|ACCESS_KEY|PRIVATE_KEY)[A-Z0-9_]*)=([^\s]+)",
+    )
+    .expect("compile ENV_ASSIGN_RE")
+});
+static FLAG_SECRET_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i)(--?(?:token|secret|password|passwd|api[-_]?key|access[-_]?key|private[-_]?key))(=|\s+)([^\s]+)",
+    )
+    .expect("compile FLAG_SECRET_RE")
+});
+static AUTH_BEARER_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)(authorization:\s*bearer\s+)([^\s]+)").expect("compile AUTH_BEARER_RE")
+});
+static QUERY_SECRET_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)([?&](?:token|access_token|api_key|apikey|password|secret)=)([^&\s]+)")
+        .expect("compile QUERY_SECRET_RE")
+});
+
+fn redact_sensitive(s: &str) -> String {
+    let step1 = ENV_ASSIGN_RE.replace_all(s, "$1=[REDACTED]");
+    let step2 = FLAG_SECRET_RE.replace_all(&step1, |caps: &regex::Captures<'_>| {
+        format!("{}{}[REDACTED]", &caps[1], &caps[2])
+    });
+    let step3 = AUTH_BEARER_RE.replace_all(&step2, "$1[REDACTED]");
+    QUERY_SECRET_RE
+        .replace_all(&step3, "$1[REDACTED]")
+        .into_owned()
 }
 
 /// Fake/test adapters for use in other crates' tests.
@@ -455,7 +545,12 @@ pub mod fakes {
     }
 
     impl CommandRunner for FakeCommandRunner {
-        fn run(&self, _cwd: &Path, argv: &[String]) -> Result<CmdOutput, EnvCheckError> {
+        fn run(
+            &self,
+            _cwd: &Path,
+            argv: &[String],
+            _timeout: Duration,
+        ) -> Result<CmdOutput, EnvCheckError> {
             if argv.is_empty() {
                 return Err(EnvCheckError::Runtime("empty argv".into()));
             }
@@ -513,10 +608,12 @@ pub mod fakes {
 
         /// Create a FakeClock with a default fixed timestamp (2024-01-01T00:00:00Z).
         pub fn default_time() -> Self {
-            use chrono::TimeZone;
-            Self {
-                fixed_time: chrono::Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
-            }
+            use chrono::{LocalResult, TimeZone};
+            let fixed_time = match chrono::Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0) {
+                LocalResult::Single(time) => time,
+                _ => chrono::DateTime::from(std::time::UNIX_EPOCH),
+            };
+            Self { fixed_time }
         }
     }
 
@@ -543,7 +640,12 @@ mod tests {
     struct ErrCommandRunner;
 
     impl CommandRunner for ErrCommandRunner {
-        fn run(&self, _cwd: &Path, _argv: &[String]) -> Result<CmdOutput, EnvCheckError> {
+        fn run(
+            &self,
+            _cwd: &Path,
+            _argv: &[String],
+            _timeout: Duration,
+        ) -> Result<CmdOutput, EnvCheckError> {
             Err(EnvCheckError::Runtime("boom".into()))
         }
     }
@@ -970,6 +1072,7 @@ mod tests {
         let _ = runner.run(
             Path::new("/repo"),
             &["test-tool".to_string(), "--version".to_string()],
+            Duration::from_secs(30),
         );
 
         let lines = writer.get_lines();
@@ -999,7 +1102,11 @@ mod tests {
         let runner = LoggingCommandRunner::new(inner, &writer);
 
         // This will return an error (command not found)
-        let result = runner.run(Path::new("/repo"), &["nonexistent".to_string()]);
+        let result = runner.run(
+            Path::new("/repo"),
+            &["nonexistent".to_string()],
+            Duration::from_secs(30),
+        );
 
         assert!(result.is_ok()); // FakeCommandRunner returns "command not found" as success with exit 127
 
@@ -1017,7 +1124,11 @@ mod tests {
         let writer = TestLogWriter::new();
         let runner = LoggingCommandRunner::new(inner, &writer);
 
-        let result = runner.run(Path::new("/repo"), &["tool".to_string()]);
+        let result = runner.run(
+            Path::new("/repo"),
+            &["tool".to_string()],
+            Duration::from_secs(30),
+        );
 
         assert!(result.is_err());
         let lines = writer.get_lines();
@@ -1047,6 +1158,51 @@ mod tests {
     }
 
     #[test]
+    fn redact_sensitive_rewrites_common_secret_patterns() {
+        let input = "API_TOKEN=VALUE_A --token VALUE_B Authorization: Bearer VALUE_C url=https://x.test?a=1&access_token=VALUE_D";
+        let redacted = redact_sensitive(input);
+
+        assert!(redacted.contains("API_TOKEN=[REDACTED]"));
+        assert!(redacted.contains("--token [REDACTED]"));
+        assert!(redacted.contains("Authorization: Bearer [REDACTED]"));
+        assert!(redacted.contains("access_token=[REDACTED]"));
+        assert!(!redacted.contains("VALUE_A"));
+        assert!(!redacted.contains("VALUE_B"));
+    }
+
+    #[test]
+    fn logging_runner_redacts_command_and_output() {
+        let inner = FakeCommandRunner::new().with_response(
+            "tool",
+            CmdOutput {
+                exit: Some(0),
+                stdout: "TOKEN=VALUE_STDOUT".to_string(),
+                stderr: "Authorization: Bearer VALUE_STDERR".to_string(),
+            },
+        );
+        let writer = TestLogWriter::new();
+        let runner = LoggingCommandRunner::new(inner, &writer);
+
+        let _ = runner.run(
+            Path::new("/repo"),
+            &[
+                "tool".to_string(),
+                "--token".to_string(),
+                "VALUE_ARG".to_string(),
+            ],
+            Duration::from_secs(30),
+        );
+
+        let log = writer.get_lines().join("\n");
+        assert!(log.contains("--token [REDACTED]"));
+        assert!(log.contains("TOKEN=[REDACTED]"));
+        assert!(log.contains("Authorization: Bearer [REDACTED]"));
+        assert!(!log.contains("VALUE_ARG"));
+        assert!(!log.contains("VALUE_STDOUT"));
+        assert!(!log.contains("VALUE_STDERR"));
+    }
+
+    #[test]
     fn logging_runner_does_not_affect_result() {
         let inner = FakeCommandRunner::new().with_response(
             "tool",
@@ -1060,7 +1216,11 @@ mod tests {
         let runner = LoggingCommandRunner::new(inner, &writer);
 
         let result = runner
-            .run(Path::new("/repo"), &["tool".to_string()])
+            .run(
+                Path::new("/repo"),
+                &["tool".to_string()],
+                Duration::from_secs(30),
+            )
             .unwrap();
 
         // Verify the result is unchanged

@@ -5,6 +5,7 @@ Shared domain types and stable APIs. This is a deliberately boring, dependency-s
 ## Purpose
 
 This crate defines the core data structures and stable finding codes used throughout the env-check system. It has minimal dependencies and is safe to import from any layer.
+It also owns the canonical explain registry consumed by `env-check explain`.
 
 ## Key Types
 
@@ -39,6 +40,7 @@ Defined in `codes` module:
 - All types must implement `Serialize + Deserialize` for JSON compatibility
 - Finding codes are stable API; never rename or remove existing codes
 - New codes must be documented in root CLAUDE.md and receive explain coverage
+- New explain entries should be added here (not duplicated in CLI)
 - Types should be `Clone`, `Debug`, and `PartialEq` where practical
 - Use `BTreeMap` over `HashMap` when iteration order matters for determinism
 - This crate must remain dependency-light (serde, chrono, thiserror only)

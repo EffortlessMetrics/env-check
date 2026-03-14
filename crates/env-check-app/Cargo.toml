@@ -9,19 +9,28 @@ homepage.workspace = true
 authors.workspace = true
 keywords.workspace = true
 categories.workspace = true
-description = "Application layer and composition root for env-check"
-readme = "../../README.md"
+description = "Application composition root that orchestrates parsing, probing, evaluation, and artifacts."
+readme = "README.md"
+documentation = "https://github.com/EffortlessMetrics/env-check/tree/main/crates/env-check-app"
+
+[features]
+default = ["parser-node", "parser-python", "parser-go"]
+parser-node = ["env-check-sources/parser-node"]
+parser-python = ["env-check-sources/parser-python"]
+parser-go = ["env-check-sources/parser-go"]
 
 [dependencies]
+env-check-config.workspace = true
 env-check-types.workspace = true
+env-check-requirement-normalizer.workspace = true
 env-check-sources.workspace = true
 env-check-probe.workspace = true
+env-check-runtime.workspace = true
 env-check-domain.workspace = true
+env-check-reporting.workspace = true
+env-check-evidence.workspace = true
 env-check-render.workspace = true
 
 anyhow.workspace = true
-serde.workspace = true
 serde_json.workspace = true
-toml.workspace = true
 chrono.workspace = true
-hostname = "0.4.2"

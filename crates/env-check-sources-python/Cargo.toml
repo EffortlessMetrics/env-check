@@ -1,0 +1,22 @@
+[package]
+name = "env-check-sources-python"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Python source parsers extracted as a microcrate."
+readme = "README.md"
+documentation = "https://github.com/EffortlessMetrics/env-check/tree/main/crates/env-check-sources-python"
+
+[dependencies]
+env-check-types.workspace = true
+anyhow.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+
+[dev-dependencies]

@@ -1,0 +1,28 @@
+# env-check.toml - CI Strict Configuration
+#
+# This configuration is optimized for strict CI/CD pipelines:
+# - Strict profile (all issues are errors)
+# - Fail on any warning or error
+# - Longer timeout for CI runners
+# - Explicit parser enablement for deterministic behavior
+# - Hash verification for security
+
+profile = "strict"
+fail_on = "warn"
+probe_timeout_secs = 60
+
+# Explicitly enable only the parsers we need
+# This prevents accidental parsing of unexpected source files
+[sources]
+enabled = ["node", "python", "go"]
+
+# All core tools must be present and verified
+force_required = ["node", "npm", "python", "pip", "go"]
+
+# Verify binary integrity with hash manifests
+hash_manifests = [
+    "scripts/ci-tools.sha256",
+    "scripts/validators.sha256"
+]
+
+# No ignored tools in strict mode - check everything

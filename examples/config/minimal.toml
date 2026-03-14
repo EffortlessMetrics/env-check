@@ -1,0 +1,11 @@
+# env-check.toml - Minimal Configuration
+#
+# This is the absolute minimum configuration file.
+# All other options use built-in defaults:
+# - profile: oss
+# - fail_on: error
+# - probe_timeout_secs: 30
+# - All parsers enabled
+# - Default hash manifest: scripts/tools.sha256
+
+profile = "oss"

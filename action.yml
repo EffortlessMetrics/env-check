@@ -24,6 +24,14 @@ inputs:
     description: "Optional markdown output path"
     required: false
     default: ""
+  annotations:
+    description: "Optional GitHub annotations output path"
+    required: false
+    default: ""
+  annotations_max:
+    description: "Maximum findings to include in GitHub annotations output"
+    required: false
+    default: "20"
   debug:
     description: "Enable debug transcript logging"
     required: false
@@ -88,6 +96,10 @@ runs:
 
         if [ -n "${{ inputs.config }}" ]; then
           ARGS+=(--config "${{ inputs.config }}")
+        fi
+
+        if [ -n "${{ inputs.annotations }}" ]; then
+          ARGS+=(--annotations "${{ inputs.annotations }}" --annotations-max "${{ inputs.annotations_max }}")
         fi
 
         if [ "${{ inputs.debug }}" = "true" ]; then

@@ -1,0 +1,106 @@
+name: Documentation Issue
+description: Report an issue with env-check documentation
+title: "[Docs]: "
+labels: ["documentation", "needs-triage"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve env-check's documentation! Please fill out the sections below to help us understand the issue.
+
+  - type: dropdown
+    id: doc-location
+    attributes:
+      label: Documentation Location
+      description: Where is the documentation issue located?
+      options:
+        - README.md
+        - docs/ directory
+        - CLI help text (--help)
+        - Code comments
+        - GitHub Actions documentation (action.yml)
+        - Other (please specify)
+    validations:
+      required: true
+
+  - type: input
+    id: doc-path
+    attributes:
+      label: Specific File or Path
+      description: |
+        If applicable, provide the specific file path or URL where the issue exists.
+      placeholder: "e.g., docs/cli-reference.md or https://github.com/..."
+    validations:
+      required: false
+
+  - type: dropdown
+    id: issue-type
+    attributes:
+      label: Issue Type
+      description: What type of documentation issue is this?
+      options:
+        - Incorrect information
+        - Missing information
+        - Unclear or confusing
+        - Outdated
+        - Typo or formatting
+        - Broken link
+        - Code example doesn't work
+        - Other (please describe)
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-state
+    attributes:
+      label: Current Documentation
+      description: |
+        Describe the current state of the documentation. What is wrong, missing, or unclear?
+        If possible, quote the relevant section.
+      placeholder: |
+        The current documentation says:
+        > "..."
+        
+        But this is incorrect because...
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggested-improvement
+    attributes:
+      label: Suggested Improvement
+      description: |
+        Describe how you think the documentation should be improved.
+        If possible, provide the corrected or suggested text.
+      placeholder: |
+        I suggest changing it to:
+        > "..."
+        
+        This would be clearer because...
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: |
+        Add any other context that might be helpful:
+        - What were you trying to accomplish when you encountered this issue?
+        - Are there related issues or pull requests?
+        - Any other relevant information?
+      placeholder: "I was trying to set up env-check for my project when..."
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: pre-submission
+    attributes:
+      label: Pre-submission Checklist
+      description: Please confirm the following before submitting
+      options:
+        - label: I have searched the existing issues to ensure this is not a duplicate
+          required: true
+        - label: I have provided the location and description of the issue
+          required: true
