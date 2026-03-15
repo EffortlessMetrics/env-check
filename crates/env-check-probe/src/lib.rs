@@ -6,7 +6,7 @@
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
@@ -48,6 +48,8 @@ impl CommandRunner for OsCommandRunner {
         let mut cmd = Command::new(&argv[0]);
         cmd.args(&argv[1..]);
         cmd.current_dir(cwd);
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
 
         let mut child = cmd
             .spawn()
@@ -1292,5 +1294,24 @@ mod tests {
         let clock2 = FakeClock::default_time();
 
         assert_eq!(clock.now(), clock2.now());
+    }
+
+    #[test]
+    fn os_command_runner_captures_stdout() {
+        let runner = OsCommandRunner;
+        let result = runner
+            .run(
+                Path::new("."),
+                &["cargo".to_string(), "--version".to_string()],
+                Duration::from_secs(10),
+            )
+            .unwrap();
+
+        assert!(
+            result.stdout.contains("cargo"),
+            "stdout should contain version output, got: {:?}",
+            result.stdout
+        );
+        assert_eq!(result.exit, Some(0));
     }
 }
