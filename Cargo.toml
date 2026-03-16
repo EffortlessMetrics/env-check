@@ -19,6 +19,7 @@ members = [
   "crates/env-check-render",
   "crates/env-check-app",
   "crates/env-check-cli",
+  "crates/env-check",
   "xtask",
 ]
 
@@ -34,23 +35,24 @@ categories = ["development-tools", "command-line-utilities"]
 
 [workspace.dependencies]
 # Internal crates
-env-check-types = { version = "0.1.0", path = "crates/env-check-types" }
-env-check-config = { version = "0.1.0", path = "crates/env-check-config" }
-env-check-sources = { version = "0.1.0", path = "crates/env-check-sources", default-features = false }
-env-check-sources-node = { version = "0.1.0", path = "crates/env-check-sources-node" }
-env-check-sources-python = { version = "0.1.0", path = "crates/env-check-sources-python" }
-env-check-sources-go = { version = "0.1.0", path = "crates/env-check-sources-go" }
-env-check-sources-hash = { version = "0.1.0", path = "crates/env-check-sources-hash" }
-env-check-parser-flags = { version = "0.1.0", path = "crates/env-check-parser-flags", default-features = false }
-env-check-requirement-normalizer = { version = "0.1.0", path = "crates/env-check-requirement-normalizer" }
-env-check-probe = { version = "0.1.0", path = "crates/env-check-probe" }
-env-check-reporting = { version = "0.1.0", path = "crates/env-check-reporting" }
-env-check-runtime = { version = "0.1.0", path = "crates/env-check-runtime" }
-env-check-runtime-metadata = { version = "0.1.0", path = "crates/env-check-runtime-metadata" }
-env-check-domain = { version = "0.1.0", path = "crates/env-check-domain" }
-env-check-evidence = { version = "0.1.0", path = "crates/env-check-evidence" }
-env-check-render = { version = "0.1.0", path = "crates/env-check-render" }
-env-check-app = { version = "0.1.0", path = "crates/env-check-app", default-features = false }
+env-check-types = { version = "0.2.0", path = "crates/env-check-types" }
+env-check-config = { version = "0.2.0", path = "crates/env-check-config" }
+env-check-sources = { version = "0.2.0", path = "crates/env-check-sources", default-features = false }
+env-check-sources-node = { version = "0.2.0", path = "crates/env-check-sources-node" }
+env-check-sources-python = { version = "0.2.0", path = "crates/env-check-sources-python" }
+env-check-sources-go = { version = "0.2.0", path = "crates/env-check-sources-go" }
+env-check-sources-hash = { version = "0.2.0", path = "crates/env-check-sources-hash" }
+env-check-parser-flags = { version = "0.2.0", path = "crates/env-check-parser-flags", default-features = false }
+env-check-requirement-normalizer = { version = "0.2.0", path = "crates/env-check-requirement-normalizer" }
+env-check-probe = { version = "0.2.0", path = "crates/env-check-probe" }
+env-check-reporting = { version = "0.2.0", path = "crates/env-check-reporting" }
+env-check-runtime = { version = "0.2.0", path = "crates/env-check-runtime" }
+env-check-runtime-metadata = { version = "0.2.0", path = "crates/env-check-runtime-metadata" }
+env-check-domain = { version = "0.2.0", path = "crates/env-check-domain" }
+env-check-evidence = { version = "0.2.0", path = "crates/env-check-evidence" }
+env-check-render = { version = "0.2.0", path = "crates/env-check-render" }
+env-check-app = { version = "0.2.0", path = "crates/env-check-app", default-features = false }
+env-check-cli = { version = "0.2.0", path = "crates/env-check-cli", default-features = false }
 
 # Core
 anyhow = "1.0.101"
