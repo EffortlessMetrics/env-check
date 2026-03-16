@@ -1,5 +1,8 @@
 # env-check-domain
 
+> **Note**: This is an internal implementation detail of [env-check](https://crates.io/crates/env-check).
+> API not covered by semver guarantees. Use `cargo install env-check` instead.
+
 Pure policy evaluation from requirements and observations to findings and verdicts.
 
 ## What This Crate Does
