@@ -9,8 +9,9 @@ homepage.workspace = true
 authors.workspace = true
 keywords.workspace = true
 categories.workspace = true
-description = "Pure evaluation logic for env-check tool validation"
-readme = "../../README.md"
+description = "Pure policy evaluation from requirements and observations to findings and verdict."
+readme = "README.md"
+documentation = "https://github.com/EffortlessMetrics/env-check/tree/main/crates/env-check-domain"
 
 [dependencies]
 env-check-types.workspace = true

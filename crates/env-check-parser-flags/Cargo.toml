@@ -1,0 +1,23 @@
+[package]
+name = "env-check-parser-flags"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Stable parser feature-flag model shared across source discovery and configuration."
+readme = "README.md"
+documentation = "https://github.com/EffortlessMetrics/env-check/tree/main/crates/env-check-parser-flags"
+
+[dependencies]
+anyhow.workspace = true
+
+[features]
+default = ["parser-node", "parser-python", "parser-go"]
+parser-node = []
+parser-python = []
+parser-go = []

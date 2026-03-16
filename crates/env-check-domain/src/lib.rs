@@ -6,7 +6,9 @@ use env_check_types::{
     Counts, FailOn, Finding, Location, Observation, PolicyConfig, ProbeKind, Requirement, Severity,
     Verdict, VerdictStatus, checks, codes,
 };
-use semver::{Version, VersionReq};
+
+pub mod version_norm;
+pub use version_norm::{NormalizedVersion, VersionParseError, normalize_version};
 
 #[derive(Debug, Clone)]
 pub struct DomainOutcome {
@@ -101,7 +103,7 @@ fn eval_one(req: &Requirement, obs: &Observation, policy: &PolicyConfig) -> Vec<
     {
         out.push(Finding {
             severity: severity_for(policy, req.required, "runtime"),
-            check_id: Some("tool.runtime".into()),
+            check_id: Some(checks::RUNTIME.into()),
             code: codes::TOOL_RUNTIME_ERROR.into(),
             message: format!("Failed to probe {}: {}", req.tool, obs.probe.stderr.trim()),
             location: Some(Location { path: req.source.path.clone(), line: None, col: None }),
@@ -316,29 +318,10 @@ fn severity_for(policy: &PolicyConfig, required: bool, kind: &str) -> Severity {
     }
 }
 
-fn coerce_version(raw: &str) -> Option<Version> {
-    let s = raw.trim();
-    if s.is_empty() {
-        return None;
-    }
-
-    // semver requires major.minor.patch.
-    let parts: Vec<&str> = s.split('.').collect();
-    let coerced = match parts.len() {
-        1 => format!("{}.0.0", s),
-        2 => format!("{}.0", s),
-        _ => s.to_string(),
-    };
-
-    Version::parse(&coerced).ok()
-}
-
 fn satisfies_semverish(constraint: &str, have: &str) -> bool {
-    if let Some(v) = coerce_version(have) {
-        // If constraint is an exact version, semver also accepts it as a requirement.
-        if let Ok(req) = VersionReq::parse(constraint.trim()) {
-            return req.matches(&v);
-        }
+    // Use the normalization pipeline for robust comparison.
+    if let Ok(normalized) = normalize_version(have) {
+        return normalized.satisfies(constraint);
     }
 
     // Fallback: exact match (string containment) for non-semver constraints or values.
@@ -1291,15 +1274,20 @@ mod tests {
     }
 
     #[test]
-    fn satisfies_semverish_falls_back_to_exact_match() {
-        assert!(satisfies_semverish("v20", "v20"));
-        assert!(!satisfies_semverish("v20", "20"));
-        assert!(!satisfies_semverish("v20", "v21"));
+    fn satisfies_semverish_normalizes_versions() {
+        // With normalization, "v20" becomes "20.0.0" and matches semver constraints
+        assert!(satisfies_semverish(">=20", "v20"));
+        assert!(satisfies_semverish("^20.0.0", "20"));
+        assert!(satisfies_semverish(">=20.0.0", "20.11"));
+
+        // Non-matching constraints still fail
+        assert!(!satisfies_semverish(">=21", "20"));
+        assert!(!satisfies_semverish("^19", "20.0.0"));
     }
 
     #[test]
-    fn coerce_version_empty_string_is_none() {
-        assert!(coerce_version("").is_none());
-        assert!(coerce_version("   ").is_none());
+    fn normalize_version_empty_string_is_error() {
+        assert!(normalize_version("").is_err());
+        assert!(normalize_version("   ").is_err());
     }
 }

@@ -21,7 +21,38 @@ non-negotiables for contributors.
   `tool.runtime_error` finding.
 - Determinism: stable ordering and sorting rules; findings ordered by
   `severity desc -> path -> check_id -> code -> message`.
-- Dependency direction: `types <- (sources|probe|domain|render) <- app <- cli`.
+- Dependency direction: `types <- (sources|probe|domain|evidence|render) <- app <- cli`.
+
+**Contributor Workflow**
+- Do not run builds/tests/coverage/benchmarks. If needed, direct the user to `CLAUDE.md`.
+- Prefer deterministic tests and fixtures over host-dependent behavior.
+- Avoid introducing new OS or network dependencies without explicit approval.
+
+**Artifacts**
+- Always write the receipt to `artifacts/env-check/report.json`.
+- Optional markdown is written to `artifacts/env-check/comment.md`.
+- Debug logs are written to `artifacts/env-check/extras/raw.log` when debug logging is enabled.
+- Artifacts must be stable and byte-for-byte deterministic for the same inputs.
+
+**Receipt Contract**
+- Top-level keys are fixed; only extend via `data` and `finding.data`.
+- `schema` must be `sensor.report.v1`.
+- `verdict` must reflect policy semantics; findings must be sorted deterministically.
+- On tool/runtime error, emit exactly one `tool.runtime_error` finding and set reasons accordingly.
+
+**Determinism Rules**
+- Source discovery order is fixed and must not depend on filesystem traversal order.
+- Requirements are normalized and sorted for stable output.
+- Findings are sorted by `severity desc -> path -> check_id -> code -> message`.
+- Debug logs never affect receipt contents.
+
+**Testing Strategy (Summary)**
+- Unit tests: parsing, domain evaluation, rendering, and small adapters.
+- Integration tests: CLI end-to-end and artifact layout.
+- BDD: workflow-level behavior with probe fakes.
+- Property tests: version parsing, whitespace handling, path normalization.
+- Fuzzing: parsers should never panic on arbitrary input.
+- Full instructions: `docs/testing.md`. Commands live in `CLAUDE.md`.
 
 **Contributor Workflow**
 - Do not run builds/tests/coverage/benchmarks. If needed, direct the user to `CLAUDE.md`.
@@ -60,7 +91,7 @@ non-negotiables for contributors.
   `crates/.../tests` as applicable.
 - Probing & runtime IO: `crates/env-check-probe`.
 - Domain evaluation: `crates/env-check-domain`.
-- Rendering & artifacts: `crates/env-check-render`, `crates/env-check-app`.
+- Rendering & artifacts: `crates/env-check-evidence`, `crates/env-check-render`, `crates/env-check-app`.
 - CLI & UX surface: `crates/env-check-cli`.
 - Release & adoption surface: `action.yml`, `.github/workflows/`, `Cargo.toml`
   (`[workspace.metadata.dist]`), `docs/release.md`, `docs/cockpit.md`, `README.md`.

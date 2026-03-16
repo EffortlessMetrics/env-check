@@ -3,8 +3,19 @@ resolver = "2"
 members = [
   "crates/env-check-types",
   "crates/env-check-sources",
+  "crates/env-check-config",
+  "crates/env-check-sources-node",
+  "crates/env-check-sources-python",
+  "crates/env-check-sources-go",
+  "crates/env-check-sources-hash",
+  "crates/env-check-parser-flags",
+  "crates/env-check-requirement-normalizer",
   "crates/env-check-probe",
+  "crates/env-check-reporting",
+  "crates/env-check-runtime",
+  "crates/env-check-runtime-metadata",
   "crates/env-check-domain",
+  "crates/env-check-evidence",
   "crates/env-check-render",
   "crates/env-check-app",
   "crates/env-check-cli",
@@ -13,7 +24,7 @@ members = [
 
 [workspace.package]
 edition = "2024"
-license = "MIT or apache 2.0"
+license = "MIT OR Apache-2.0"
 repository = "https://github.com/EffortlessMetrics/env-check"
 homepage = "https://github.com/EffortlessMetrics/env-check"
 rust-version = "1.92"
@@ -24,11 +35,22 @@ categories = ["development-tools", "command-line-utilities"]
 [workspace.dependencies]
 # Internal crates
 env-check-types = { version = "0.1.0", path = "crates/env-check-types" }
-env-check-sources = { version = "0.1.0", path = "crates/env-check-sources" }
+env-check-config = { version = "0.1.0", path = "crates/env-check-config" }
+env-check-sources = { version = "0.1.0", path = "crates/env-check-sources", default-features = false }
+env-check-sources-node = { version = "0.1.0", path = "crates/env-check-sources-node" }
+env-check-sources-python = { version = "0.1.0", path = "crates/env-check-sources-python" }
+env-check-sources-go = { version = "0.1.0", path = "crates/env-check-sources-go" }
+env-check-sources-hash = { version = "0.1.0", path = "crates/env-check-sources-hash" }
+env-check-parser-flags = { version = "0.1.0", path = "crates/env-check-parser-flags", default-features = false }
+env-check-requirement-normalizer = { version = "0.1.0", path = "crates/env-check-requirement-normalizer" }
 env-check-probe = { version = "0.1.0", path = "crates/env-check-probe" }
+env-check-reporting = { version = "0.1.0", path = "crates/env-check-reporting" }
+env-check-runtime = { version = "0.1.0", path = "crates/env-check-runtime" }
+env-check-runtime-metadata = { version = "0.1.0", path = "crates/env-check-runtime-metadata" }
 env-check-domain = { version = "0.1.0", path = "crates/env-check-domain" }
+env-check-evidence = { version = "0.1.0", path = "crates/env-check-evidence" }
 env-check-render = { version = "0.1.0", path = "crates/env-check-render" }
-env-check-app = { version = "0.1.0", path = "crates/env-check-app" }
+env-check-app = { version = "0.1.0", path = "crates/env-check-app", default-features = false }
 
 # Core
 anyhow = "1.0.101"
@@ -38,6 +60,7 @@ serde_json = "1.0.149"
 
 # CLI / UX
 clap = { version = "4.5.57", features = ["derive", "env"] }
+clap_complete = "4.5.57"
 
 # Parsing / data
 toml = "0.9.8"
@@ -50,6 +73,9 @@ chrono = { version = "0.4.43", features = ["serde"] }
 which = "8.0.0"
 sha2 = "0.10.9"
 hex = "0.4.3"
+
+# Process management
+wait-timeout = "0.2.1"
 
 # Testing
 insta = "1.46.3"

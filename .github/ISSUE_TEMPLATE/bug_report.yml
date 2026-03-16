@@ -1,0 +1,153 @@
+name: Bug Report
+description: Report a bug or unexpected behavior in env-check
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this bug! Please fill out the sections below to help us investigate.
+        
+        Before submitting, please check if this issue has already been reported.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of what the bug is.
+      placeholder: "When running env-check with..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior. Please be as specific as possible.
+      placeholder: |
+        1. Create a `.tool-versions` file with...
+        2. Run `env-check` with...
+        3. Observe the output...
+      value: |
+        1. 
+        2. 
+        3. 
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected Behavior
+      description: A clear and concise description of what you expected to happen.
+      placeholder: "env-check should report..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: Actual Behavior
+      description: A clear and concise description of what actually happened.
+      placeholder: "Instead, env-check reported..."
+    validations:
+      required: true
+
+  - type: input
+    id: env-check-version
+    attributes:
+      label: env-check Version
+      description: The version of env-check you are using
+      placeholder: "e.g., 0.1.0 or commit hash"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      description: What operating system are you running env-check on?
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - Other (please specify in environment details)
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment-details
+    attributes:
+      label: Environment Details
+      description: |
+        Please provide additional environment information:
+        - OS version/distribution
+        - Relevant tool versions (e.g., `rustc --version`, `node --version`)
+        - How env-check was installed (cargo, binary download, etc.)
+      placeholder: |
+        - OS: Ubuntu 22.04
+        - rustc: 1.75.0
+        - Installation method: cargo install
+    validations:
+      required: false
+
+  - type: textarea
+    id: receipt-output
+    attributes:
+      label: Receipt or Error Output
+      description: |
+        Please paste the relevant output from env-check. This could be:
+        - The receipt JSON from `artifacts/env-check/report.json`
+        - Console output showing the error
+        - Debug logs (if available)
+        
+        **Note:** Be careful not to include sensitive information.
+      placeholder: |
+        ```json
+        {
+          "schema": "sensor.report.v1",
+          "verdict": {...},
+          ...
+        }
+        ```
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: configuration
+    attributes:
+      label: Configuration
+      description: |
+        Please share any relevant configuration files (e.g., `env-check.toml`, `.tool-versions`).
+        This helps us understand how env-check was configured when the bug occurred.
+      placeholder: |
+        # env-check.toml
+        [tools]
+        ...
+      render: toml
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: pre-submission
+    attributes:
+      label: Pre-submission Checklist
+      description: Please confirm the following before submitting
+      options:
+        - label: I have searched the existing issues to ensure this is not a duplicate
+          required: true
+        - label: I have provided all the requested information above
+          required: true
+        - label: I have redacted any sensitive information from the output
+          required: true
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Add any other context about the problem here (screenshots, related issues, etc.)
+      placeholder: "This started happening after..."
+    validations:
+      required: false

@@ -1,11 +1,11 @@
 use std::path::{Path, PathBuf};
 
 use env_check_sources::{
-    parse_all, parse_go_mod, parse_go_mod_str, parse_hash_manifest, parse_hash_manifest_str,
-    parse_mise_toml, parse_mise_toml_str, parse_node_version, parse_node_version_str, parse_nvmrc,
-    parse_nvmrc_str, parse_package_json, parse_package_json_str, parse_pyproject_toml,
-    parse_pyproject_toml_str, parse_python_version, parse_python_version_str, parse_rust_toolchain,
-    parse_tool_versions, parse_tool_versions_str,
+    ParserFilters, parse_all, parse_all_with_filters, parse_go_mod, parse_go_mod_str,
+    parse_hash_manifest, parse_hash_manifest_str, parse_mise_toml, parse_mise_toml_str,
+    parse_node_version, parse_node_version_str, parse_nvmrc, parse_nvmrc_str, parse_package_json,
+    parse_package_json_str, parse_pyproject_toml, parse_pyproject_toml_str, parse_python_version,
+    parse_python_version_str, parse_rust_toolchain, parse_tool_versions, parse_tool_versions_str,
 };
 use env_check_types::{ProbeKind, SourceKind, codes};
 
@@ -342,6 +342,20 @@ fn mise_with_other_tables() {
     assert_eq!(reqs[0].tool, "node");
 }
 
+#[test]
+fn mise_table_value_uses_version_field() {
+    let root = Path::new("/fake");
+    let path = root.join(".mise.toml");
+    let reqs = parse_mise_toml_str(
+        root,
+        &path,
+        "[tools]\nnode = { version = \"20\", backend = \"asdf\" }",
+    )
+    .unwrap();
+    assert_eq!(reqs.len(), 1);
+    assert_eq!(reqs[0].constraint.as_deref(), Some("20"));
+}
+
 // =============================================================================
 // Rust toolchain tests
 // =============================================================================
@@ -575,6 +589,52 @@ fn parse_all_hash_manifest_parse_error_emits_finding() {
             .iter()
             .any(|s| s.path == "scripts/tools.sha256")
     );
+}
+
+#[test]
+fn parse_all_with_filters_excludes_disabled_node_parser() {
+    let root = tempfile::tempdir().unwrap();
+    let root_path = root.path();
+    std::fs::write(root_path.join(".node-version"), "20.11.0\n").unwrap();
+
+    let filters = ParserFilters::from_config(&[], &["node".to_string()]).expect("filters");
+    let parsed = parse_all_with_filters(root_path, &[], &filters);
+    assert!(
+        !parsed
+            .sources_used
+            .iter()
+            .any(|s| s.kind == SourceKind::NodeVersion),
+        "node parser should be disabled"
+    );
+    assert!(
+        !parsed
+            .sources_used
+            .iter()
+            .any(|s| s.kind == SourceKind::Nvmrc),
+        "node parser should be disabled"
+    );
+    assert!(
+        !parsed
+            .sources_used
+            .iter()
+            .any(|s| s.path.ends_with("package.json")),
+        "node parser should be disabled"
+    );
+}
+
+#[test]
+fn parser_filters_reject_unknown_and_conflicting_configs() {
+    let err =
+        ParserFilters::from_config(&["node".to_string()], &["bad-parser".to_string()]).unwrap_err();
+    assert!(format!("{err:#}").contains("unsupported parser 'bad-parser'"));
+
+    let err = ParserFilters::from_config(&["node".to_string()], &["node".to_string()]).unwrap_err();
+    assert!(format!("{err:#}").contains("parsers appear in both"));
+
+    let filters = ParserFilters::from_config(&["NODEJS".to_string()], &[]).expect("parser aliases");
+    assert!(filters.node_enabled());
+    assert!(!filters.python_enabled());
+    assert!(!filters.go_enabled());
 }
 
 #[test]
@@ -844,12 +904,12 @@ fn go_mod_missing_directive_is_error() {
 
 #[test]
 fn go_mod_with_toolchain() {
-    // Should extract the go directive, ignore toolchain directive
+    // toolchain directive should tighten the effective minimum.
     let root = Path::new("tests/fixtures/go_mod_with_toolchain");
     let path = root.join("go.mod");
     let reqs = parse_go_mod(root, &path).unwrap();
     assert_eq!(reqs.len(), 1);
-    assert_eq!(reqs[0].constraint, Some(">=1.21".to_string()));
+    assert_eq!(reqs[0].constraint, Some(">=1.21.5".to_string()));
 }
 
 #[test]
@@ -1103,6 +1163,28 @@ fn package_json_parses_full() {
     assert_eq!(reqs.len(), 2);
     assert!(reqs.iter().any(|r| r.tool == "node"));
     assert!(reqs.iter().any(|r| r.tool == "pnpm"));
+}
+
+#[test]
+fn package_json_parses_engines_npm() {
+    let root = Path::new("/fake");
+    let path = root.join("package.json");
+    let json = r#"{"engines": {"npm": ">=10"}}"#;
+    let reqs = parse_package_json_str(root, &path, json).unwrap();
+    assert_eq!(reqs.len(), 1);
+    assert_eq!(reqs[0].tool, "npm");
+    assert_eq!(reqs[0].constraint.as_deref(), Some(">=10"));
+}
+
+#[test]
+fn package_json_prefers_package_manager_for_npm_constraint() {
+    let root = Path::new("/fake");
+    let path = root.join("package.json");
+    let json = r#"{"engines": {"npm": ">=9"}, "packageManager": "npm@10.2.3"}"#;
+    let reqs = parse_package_json_str(root, &path, json).unwrap();
+    let npm_reqs: Vec<_> = reqs.iter().filter(|r| r.tool == "npm").collect();
+    assert_eq!(npm_reqs.len(), 1);
+    assert_eq!(npm_reqs[0].constraint.as_deref(), Some("10.2.3"));
 }
 
 #[test]

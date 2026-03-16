@@ -10,6 +10,7 @@ fn main() -> anyhow::Result<()> {
         Some("schema-check") => schema_check(),
         Some("mutants") => mutants(args.collect()),
         Some("conform") => conform(),
+        Some("adoption-check") => adoption_check(),
         Some("--help") | Some("-h") => {
             print_help();
             Ok(())
@@ -25,7 +26,10 @@ fn print_help() {
     eprintln!("xtask commands:");
     eprintln!("  schema-check   Validate schemas and example receipts");
     eprintln!(
-        "  conform        Run cockpit conformance checks (schema, determinism, survivability)"
+        "  conform        Run cockpit conformance checks (schema, determinism, survivability, adoption)"
+    );
+    eprintln!(
+        "  adoption-check Run repo-only adoption checks from Phase 7 (contracts/offline/action/docs/release)"
     );
     eprintln!("  mutants        Run cargo-mutants on domain crate (requires cargo-mutants)");
     eprintln!();
@@ -260,6 +264,7 @@ fn mutants(extra_args: Vec<String>) -> anyhow::Result<()> {
 /// 1. Static Validation - CLI produces schema-valid receipts
 /// 2. Determinism - Repeated runs produce identical output (modulo timestamps)
 /// 3. Survivability - Runtime errors produce valid receipts with tool.runtime_error
+/// 4. Adoption Surface - repo-only Phase 7 checks (offline/action/docs/release)
 fn conform() -> anyhow::Result<()> {
     eprintln!();
     eprintln!("env-check conformance harness");
@@ -292,7 +297,7 @@ fn conform() -> anyhow::Result<()> {
     // 1. Static Validation
     // =========================================================================
     eprintln!();
-    eprintln!("[1/3] Static Validation");
+    eprintln!("[1/4] Static Validation");
 
     // Test pass_basic fixture
     static_total += 1;
@@ -390,7 +395,7 @@ fn conform() -> anyhow::Result<()> {
     // 2. Determinism
     // =========================================================================
     eprintln!();
-    eprintln!("[2/3] Determinism");
+    eprintln!("[2/4] Determinism");
 
     // Run twice on same fixture and compare (ignoring timestamps)
     determinism_total += 1;
@@ -428,7 +433,7 @@ fn conform() -> anyhow::Result<()> {
     // 3. Survivability
     // =========================================================================
     eprintln!();
-    eprintln!("[3/3] Survivability");
+    eprintln!("[3/4] Survivability");
 
     // Test error recovery - invalid config should still produce valid receipt
     survivability_total += 1;
@@ -436,21 +441,13 @@ fn conform() -> anyhow::Result<()> {
     if error_recovery.exists() {
         // Run env-check on fixture with invalid config
         let report_path = temp_dir.join("error_recovery_report.json");
-        let result = Command::new("cargo")
-            .args([
-                "run",
-                "-p",
-                "env-check-cli",
-                "--",
-                "check",
-                "--root",
-                error_recovery.to_str().unwrap(),
-                "--profile",
-                "team",
-                "--out",
-                report_path.to_str().unwrap(),
-            ])
-            .output();
+        let mut command = Command::new("cargo");
+        command
+            .args(["run", "-p", "env-check-cli", "--", "check", "--root"])
+            .arg(&error_recovery)
+            .args(["--profile", "team", "--out"])
+            .arg(&report_path);
+        let result = command.output();
 
         match result {
             Ok(output) => {
@@ -494,13 +491,21 @@ fn conform() -> anyhow::Result<()> {
     );
 
     // =========================================================================
+    // 4. Adoption Surface (Phase 7)
+    // =========================================================================
+    eprintln!();
+    eprintln!("[4/4] Adoption Surface");
+    let (adoption_passed, adoption_total) = run_adoption_checks();
+    eprintln!("  Summary: {}/{} passed", adoption_passed, adoption_total);
+
+    // =========================================================================
     // Final Summary
     // =========================================================================
     eprintln!();
     eprintln!("=============================");
 
-    let total_passed = static_passed + determinism_passed + survivability_passed;
-    let total_tests = static_total + determinism_total + survivability_total;
+    let total_passed = static_passed + determinism_passed + survivability_passed + adoption_passed;
+    let total_tests = static_total + determinism_total + survivability_total + adoption_total;
 
     if total_passed == total_tests {
         eprintln!("Conformance: PASS ({}/{})", total_passed, total_tests);
@@ -511,6 +516,551 @@ fn conform() -> anyhow::Result<()> {
         eprintln!("Conformance: FAIL ({}/{})", total_passed, total_tests);
         eprintln!("  Temp dir preserved at: {}", temp_dir.display());
         bail!("conformance checks failed");
+    }
+}
+
+/// Run Phase 7 repo-only validation checks directly.
+fn adoption_check() -> anyhow::Result<()> {
+    eprintln!();
+    eprintln!("env-check phase 7 adoption validation");
+    eprintln!("====================================");
+
+    let (passed, total) = run_adoption_checks();
+
+    eprintln!();
+    eprintln!("=============================");
+    if passed == total {
+        eprintln!("Adoption validation: PASS ({}/{})", passed, total);
+        Ok(())
+    } else {
+        eprintln!("Adoption validation: FAIL ({}/{})", passed, total);
+        bail!("phase 7 adoption checks failed");
+    }
+}
+
+fn run_adoption_checks() -> (usize, usize) {
+    let mut passed = 0usize;
+    let mut total = 0usize;
+
+    run_adoption_gate(
+        "Contract conformance: schema validation gate is wired",
+        &mut passed,
+        &mut total,
+        check_schema_contract_gate,
+    );
+    run_adoption_gate(
+        "Contract conformance: findings ordering contract is enforced",
+        &mut passed,
+        &mut total,
+        check_findings_order_contract,
+    );
+    run_adoption_gate(
+        "Contract conformance: no_sources receipts include verdict reason",
+        &mut passed,
+        &mut total,
+        check_no_sources_skip_reason_contract,
+    );
+    run_adoption_gate(
+        "Contract conformance: explain registry covers stable codes/check IDs",
+        &mut passed,
+        &mut total,
+        check_explain_registry_contract,
+    );
+    run_adoption_gate(
+        "Offline-first: runtime crates avoid network client dependencies",
+        &mut passed,
+        &mut total,
+        check_no_network_client_deps,
+    );
+    run_adoption_gate(
+        "Offline-first: git metadata collection is best-effort and no-fetch",
+        &mut passed,
+        &mut total,
+        check_git_metadata_no_fetch,
+    );
+    run_adoption_gate(
+        "Action usage: composite action installs pinned release",
+        &mut passed,
+        &mut total,
+        check_action_pinned_release_install,
+    );
+    run_adoption_gate(
+        "Action usage: composite action writes canonical artifacts",
+        &mut passed,
+        &mut total,
+        check_action_writes_artifacts,
+    );
+    run_adoption_gate(
+        "Action usage: example workflow uploads artifacts/env-check/",
+        &mut passed,
+        &mut total,
+        check_example_uploads_artifacts,
+    );
+    run_adoption_gate(
+        "Cockpit ingestion: docs define Environment section + direct receipt ingestion",
+        &mut passed,
+        &mut total,
+        check_cockpit_ingestion_docs,
+    );
+    run_adoption_gate(
+        "Release readiness: dist workflows match configured targets/installers",
+        &mut passed,
+        &mut total,
+        check_release_readiness_gates,
+    );
+    run_adoption_gate(
+        "Release readiness: adoption surface pins v0.1.0 action reference",
+        &mut passed,
+        &mut total,
+        check_release_pin_surface,
+    );
+
+    (passed, total)
+}
+
+fn run_adoption_gate<F>(label: &str, passed: &mut usize, total: &mut usize, check: F)
+where
+    F: FnOnce() -> anyhow::Result<()>,
+{
+    *total += 1;
+    match check() {
+        Ok(()) => {
+            *passed += 1;
+            eprintln!("  PASS: {}", label);
+        }
+        Err(err) => eprintln!("  FAIL: {}: {}", label, err),
+    }
+}
+
+fn check_schema_contract_gate() -> anyhow::Result<()> {
+    for schema in [
+        "schemas/sensor.report.v1.schema.json",
+        "schemas/env-check.report.v1.json",
+    ] {
+        if !Path::new(schema).exists() {
+            bail!("required schema missing: {}", schema);
+        }
+    }
+
+    let ci = read_text(".github/workflows/ci.yml")?;
+    require_contains(
+        &ci,
+        "cargo run -p xtask -- schema-check",
+        ".github/workflows/ci.yml",
+    )?;
+    require_contains(
+        &ci,
+        "cargo run -p xtask -- conform",
+        ".github/workflows/ci.yml",
+    )?;
+    Ok(())
+}
+
+fn check_findings_order_contract() -> anyhow::Result<()> {
+    use env_check_types::{Finding, Location, Severity};
+
+    fn finding(
+        severity: Severity,
+        path: &str,
+        check_id: &str,
+        code: &str,
+        message: &str,
+    ) -> Finding {
+        Finding {
+            severity,
+            check_id: Some(check_id.to_string()),
+            code: code.to_string(),
+            message: message.to_string(),
+            location: Some(Location {
+                path: path.to_string(),
+                line: None,
+                col: None,
+            }),
+            help: None,
+            url: None,
+            fingerprint: None,
+            data: None,
+        }
+    }
+
+    let mut findings = [
+        finding(
+            Severity::Warn,
+            "z.txt",
+            "env.version",
+            "env.version_mismatch",
+            "Version mismatch z",
+        ),
+        finding(
+            Severity::Error,
+            "b.txt",
+            "env.presence",
+            "env.missing_tool",
+            "Missing tool b",
+        ),
+        finding(
+            Severity::Warn,
+            "a.txt",
+            "z.check",
+            "env.hash_mismatch",
+            "Hash mismatch z",
+        ),
+        finding(
+            Severity::Warn,
+            "a.txt",
+            "a.check",
+            "env.hash_mismatch",
+            "Hash mismatch a",
+        ),
+    ];
+    findings.sort_by_key(env_check_types::finding_sort_key);
+
+    if findings[0].severity.rank() != Severity::Error.rank() {
+        bail!("expected error severity first after canonical sort");
+    }
+    if findings[1].location.as_ref().map(|l| l.path.as_str()) != Some("a.txt")
+        || findings[1].check_id.as_deref() != Some("a.check")
+    {
+        bail!("expected path/check_id ordering after severity ordering");
+    }
+    if findings[2].location.as_ref().map(|l| l.path.as_str()) != Some("a.txt")
+        || findings[2].check_id.as_deref() != Some("z.check")
+    {
+        bail!("expected check_id tie-break ordering within same path");
+    }
+    if findings[3].location.as_ref().map(|l| l.path.as_str()) != Some("z.txt") {
+        bail!("expected path ordering within same severity");
+    }
+
+    let domain_src = read_text("crates/env-check-domain/src/lib.rs")?;
+    require_contains(
+        &domain_src,
+        "findings.sort_by(|a, b|",
+        "crates/env-check-domain/src/lib.rs",
+    )?;
+    require_contains(
+        &domain_src,
+        "finding_sort_key",
+        "crates/env-check-domain/src/lib.rs",
+    )?;
+    Ok(())
+}
+
+fn check_no_sources_skip_reason_contract() -> anyhow::Result<()> {
+    use env_check_types::{PolicyConfig, VerdictStatus};
+
+    let out = env_check_domain::evaluate(&[], &[], &PolicyConfig::default(), &[]);
+    if out.verdict.status != VerdictStatus::Skip {
+        bail!(
+            "expected no-sources verdict status 'skip', got '{:?}'",
+            out.verdict.status
+        );
+    }
+
+    if !out.verdict.reasons.iter().any(|r| r == "no_sources") {
+        bail!("expected no-sources verdict reasons to include 'no_sources'");
+    }
+
+    if out.verdict.reasons.first().map(String::as_str) != Some("no_sources") {
+        bail!(
+            "expected 'no_sources' to be first verdict reason, got {:?}",
+            out.verdict.reasons
+        );
+    }
+
+    Ok(())
+}
+
+fn check_explain_registry_contract() -> anyhow::Result<()> {
+    use std::collections::BTreeSet;
+
+    use env_check_types::{
+        KNOWN_CHECK_IDS, KNOWN_CODES, UNKNOWN_EXPLAIN_MESSAGE, explain_entries, explain_message,
+    };
+
+    for code in KNOWN_CODES {
+        let msg = explain_message(code);
+        if msg == UNKNOWN_EXPLAIN_MESSAGE {
+            bail!("missing explain registry entry for code '{}'", code);
+        }
+    }
+
+    for check_id in KNOWN_CHECK_IDS {
+        let msg = explain_message(check_id);
+        if msg == UNKNOWN_EXPLAIN_MESSAGE {
+            bail!("missing explain registry entry for check_id '{}'", check_id);
+        }
+    }
+
+    let entries = explain_entries();
+    if entries.is_empty() {
+        bail!("explain registry is empty");
+    }
+
+    let mut seen = BTreeSet::new();
+    for entry in entries {
+        if entry.id.trim().is_empty() {
+            bail!("explain registry contains empty identifier");
+        }
+        if !seen.insert(entry.id) {
+            bail!("duplicate explain registry identifier '{}'", entry.id);
+        }
+    }
+
+    // Keep CLI explain surface wired to the shared types registry.
+    let cli = read_text("crates/env-check-cli/src/main.rs")?;
+    require_contains(
+        &cli,
+        "explain_message(code)",
+        "crates/env-check-cli/src/main.rs",
+    )?;
+    require_contains(
+        &cli,
+        "for entry in explain_entries()",
+        "crates/env-check-cli/src/main.rs",
+    )?;
+
+    Ok(())
+}
+
+fn check_no_network_client_deps() -> anyhow::Result<()> {
+    let banned = ["reqwest", "ureq", "hyper", "surf", "isahc", "attohttpc"];
+
+    let mut manifests = vec![PathBuf::from("Cargo.toml")];
+    for entry in fs::read_dir("crates").context("read crates/ for Cargo manifests")? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let manifest = path.join("Cargo.toml");
+        if manifest.exists() {
+            manifests.push(manifest);
+        }
+    }
+    manifests.sort();
+
+    for manifest in manifests {
+        let text = fs::read_to_string(&manifest)
+            .with_context(|| format!("read {}", manifest.display()))?;
+        let lower = text.to_ascii_lowercase();
+        for needle in banned {
+            if lower.contains(needle) {
+                bail!(
+                    "{} declares network client dependency '{}'",
+                    manifest.display(),
+                    needle
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn check_git_metadata_no_fetch() -> anyhow::Result<()> {
+    let app = read_text("crates/env-check-app/src/lib.rs")?;
+    for forbidden in [
+        "\"fetch\"",
+        "\"pull\"",
+        "ls-remote",
+        "git fetch",
+        "git pull",
+    ] {
+        if app.contains(forbidden) {
+            bail!(
+                "crates/env-check-app/src/lib.rs contains forbidden git network operation '{}'",
+                forbidden
+            );
+        }
+    }
+
+    require_contains(
+        &app,
+        "fn detect_git(root: &Path) -> Option<GitMeta>",
+        "crates/env-check-app/src/lib.rs",
+    )?;
+    require_contains(
+        &app,
+        "let _ = git(root, &[\"rev-parse\", \"--git-dir\"])?;",
+        "crates/env-check-app/src/lib.rs",
+    )?;
+    require_contains(&app, "merge-base", "crates/env-check-app/src/lib.rs")?;
+    Ok(())
+}
+
+fn check_action_pinned_release_install() -> anyhow::Result<()> {
+    let action = read_text("action.yml")?;
+    require_contains(&action, "using: \"composite\"", "action.yml")?;
+    require_contains(
+        &action,
+        "releases/download/${ENV_CHECK_VERSION}/env-check-installer.sh",
+        "action.yml",
+    )?;
+    require_contains(
+        &action,
+        "releases/download/$env:ENV_CHECK_VERSION/env-check-installer.ps1",
+        "action.yml",
+    )?;
+    require_contains(
+        &action,
+        "version input required when action is not referenced by a vX.Y.Z tag",
+        "action.yml",
+    )?;
+    require_not_contains(&action, "/releases/latest/download/", "action.yml")?;
+    Ok(())
+}
+
+fn check_action_writes_artifacts() -> anyhow::Result<()> {
+    let action = read_text("action.yml")?;
+    require_contains(
+        &action,
+        "default: \"artifacts/env-check/report.json\"",
+        "action.yml",
+    )?;
+    require_contains(
+        &action,
+        "ARGS=(check --root \"${{ inputs.root }}\" --profile \"${{ inputs.profile }}\" --out \"${{ inputs.out }}\")",
+        "action.yml",
+    )?;
+    Ok(())
+}
+
+fn check_example_uploads_artifacts() -> anyhow::Result<()> {
+    let example = read_text("examples/github-actions-env-check.yml")?;
+    require_contains(
+        &example,
+        "uses: actions/upload-artifact@v4",
+        "examples/github-actions-env-check.yml",
+    )?;
+    require_contains(
+        &example,
+        "path: artifacts/env-check",
+        "examples/github-actions-env-check.yml",
+    )?;
+    Ok(())
+}
+
+fn check_cockpit_ingestion_docs() -> anyhow::Result<()> {
+    let cockpit = read_text("docs/cockpit.md")?;
+    require_contains(
+        &cockpit,
+        "Cockpit comment contract (Environment section)",
+        "docs/cockpit.md",
+    )?;
+    require_contains(&cockpit, "- Environment:", "docs/cockpit.md")?;
+    require_contains(
+        &cockpit,
+        "artifacts/env-check/comment.md",
+        "docs/cockpit.md",
+    )?;
+    require_contains(
+        &cockpit,
+        "without adapters or special cases",
+        "docs/cockpit.md",
+    )?;
+    Ok(())
+}
+
+fn check_release_readiness_gates() -> anyhow::Result<()> {
+    let cargo = read_text("Cargo.toml")?;
+    let release = read_text(".github/workflows/release.yml")?;
+    let dist_pr = read_text(".github/workflows/dist-pr.yml")?;
+
+    let parsed: toml::Value = toml::from_str(&cargo).context("parse Cargo.toml")?;
+    let dist = parsed
+        .get("workspace")
+        .and_then(|v| v.get("metadata"))
+        .and_then(|v| v.get("dist"))
+        .ok_or_else(|| anyhow::anyhow!("Cargo.toml missing [workspace.metadata.dist]"))?;
+
+    let targets = dist
+        .get("targets")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| anyhow::anyhow!("Cargo.toml missing workspace.metadata.dist.targets"))?;
+
+    let mut target_names = Vec::with_capacity(targets.len());
+    for target in targets {
+        let name = target
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("invalid non-string target entry"))?;
+        target_names.push(name.to_string());
+    }
+    if target_names.is_empty() {
+        bail!("workspace.metadata.dist.targets is empty");
+    }
+
+    let installers = dist
+        .get("installers")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| anyhow::anyhow!("Cargo.toml missing workspace.metadata.dist.installers"))?;
+    let installer_names: Vec<&str> = installers.iter().filter_map(|v| v.as_str()).collect();
+    if !installer_names.contains(&"shell") || !installer_names.contains(&"powershell") {
+        bail!(
+            "workspace.metadata.dist.installers must include both shell and powershell, got {:?}",
+            installer_names
+        );
+    }
+
+    require_contains(&release, "- \"v*.*.*\"", ".github/workflows/release.yml")?;
+    require_contains(
+        &release,
+        "cargo dist build --artifacts=global",
+        ".github/workflows/release.yml",
+    )?;
+    require_contains(
+        &release,
+        "files: target/distrib/*",
+        ".github/workflows/release.yml",
+    )?;
+    require_contains(&dist_pr, "cargo dist plan", ".github/workflows/dist-pr.yml")?;
+
+    for target in target_names {
+        if !release.contains(&target) {
+            bail!(
+                ".github/workflows/release.yml missing target '{}' from workspace.metadata.dist.targets",
+                target
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn check_release_pin_surface() -> anyhow::Result<()> {
+    let readme = read_text("README.md")?;
+    let example = read_text("examples/github-actions-env-check.yml")?;
+
+    require_contains(
+        &readme,
+        "uses: EffortlessMetrics/env-check@v0.1.0",
+        "README.md",
+    )?;
+    require_contains(
+        &example,
+        "uses: EffortlessMetrics/env-check@v0.1.0",
+        "examples/github-actions-env-check.yml",
+    )?;
+    Ok(())
+}
+
+fn read_text(path: &str) -> anyhow::Result<String> {
+    fs::read_to_string(path).with_context(|| format!("read {}", path))
+}
+
+fn require_contains(haystack: &str, needle: &str, path: &str) -> anyhow::Result<()> {
+    if haystack.contains(needle) {
+        Ok(())
+    } else {
+        bail!("{} missing required text: {}", path, needle);
+    }
+}
+
+fn require_not_contains(haystack: &str, needle: &str, path: &str) -> anyhow::Result<()> {
+    if haystack.contains(needle) {
+        bail!("{} must not contain: {}", path, needle);
+    } else {
+        Ok(())
     }
 }
 
@@ -567,22 +1117,13 @@ fn run_env_check_on_fixture(
 ) -> anyhow::Result<PathBuf> {
     let report_path = temp_dir.join(format!("{}_report.json", name));
 
-    let output = Command::new("cargo")
-        .args([
-            "run",
-            "-p",
-            "env-check-cli",
-            "--",
-            "check",
-            "--root",
-            fixture.to_str().unwrap(),
-            "--profile",
-            "team",
-            "--out",
-            report_path.to_str().unwrap(),
-        ])
-        .output()
-        .context("run env-check")?;
+    let mut command = Command::new("cargo");
+    command
+        .args(["run", "-p", "env-check-cli", "--", "check", "--root"])
+        .arg(fixture)
+        .args(["--profile", "team", "--out"])
+        .arg(&report_path);
+    let output = command.output().context("run env-check")?;
 
     if !output.status.success() && !report_path.exists() {
         bail!(
@@ -665,39 +1206,23 @@ fn check_determinism(fixture: &Path, temp_dir: &Path) -> anyhow::Result<()> {
 
     // First run
     let report1 = temp_dir.join(format!("{}_run1.json", name));
-    let _ = Command::new("cargo")
-        .args([
-            "run",
-            "-p",
-            "env-check-cli",
-            "--",
-            "check",
-            "--root",
-            fixture.to_str().unwrap(),
-            "--profile",
-            "team",
-            "--out",
-            report1.to_str().unwrap(),
-        ])
-        .output()?;
+    let mut first_run = Command::new("cargo");
+    first_run
+        .args(["run", "-p", "env-check-cli", "--", "check", "--root"])
+        .arg(fixture)
+        .args(["--profile", "team", "--out"])
+        .arg(&report1);
+    let _ = first_run.output()?;
 
     // Second run
     let report2 = temp_dir.join(format!("{}_run2.json", name));
-    let _ = Command::new("cargo")
-        .args([
-            "run",
-            "-p",
-            "env-check-cli",
-            "--",
-            "check",
-            "--root",
-            fixture.to_str().unwrap(),
-            "--profile",
-            "team",
-            "--out",
-            report2.to_str().unwrap(),
-        ])
-        .output()?;
+    let mut second_run = Command::new("cargo");
+    second_run
+        .args(["run", "-p", "env-check-cli", "--", "check", "--root"])
+        .arg(fixture)
+        .args(["--profile", "team", "--out"])
+        .arg(&report2);
+    let _ = second_run.output()?;
 
     // Both reports must exist
     if !report1.exists() || !report2.exists() {
@@ -936,6 +1461,18 @@ mod tests {
         validate_all_fixtures(&root, &schema).expect("validate fixtures");
 
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn explain_registry_contract_passes() {
+        // check_explain_registry_contract reads files relative to the workspace
+        // root, so we need to cd there first (tests run from CARGO_MANIFEST_DIR).
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let workspace_root = manifest_dir
+            .parent()
+            .expect("xtask parent is workspace root");
+        std::env::set_current_dir(workspace_root).expect("cd to workspace root");
+        check_explain_registry_contract().expect("explain registry contract should pass");
     }
 
     #[test]

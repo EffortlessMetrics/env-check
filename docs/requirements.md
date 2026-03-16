@@ -100,6 +100,7 @@ Commands:
 - `env-check md`
   - render-only from a `report.json` receipt
 - `env-check explain <code|check_id>`
+  - `env-check explain --list` lists all stable explainable identifiers
   - prints stable remediation guidance
 
 Required flags (v0.1):
@@ -117,6 +118,7 @@ env-check MUST write:
 - `artifacts/env-check/report.json` (canonical)
 - `artifacts/env-check/comment.md` when `--md` is requested (recommended)
 - optional `extras/raw.log` (behind `--debug` flag)
+- optional annotations output (behind `--annotations`)
 
 Receipt requirements:
 

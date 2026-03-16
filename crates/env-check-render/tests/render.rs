@@ -1,8 +1,8 @@
 use chrono::Utc;
 use env_check_render::render_markdown;
 use env_check_types::{
-    CiMeta, Counts, Finding, GitMeta, HostMeta, Location, ReceiptEnvelope, RunMeta, Severity,
-    ToolMeta, Verdict, VerdictStatus,
+    CiMeta, Counts, Finding, GitMeta, HostMeta, KNOWN_CODES, Location, ReceiptEnvelope, RunMeta,
+    Severity, ToolMeta, Verdict, VerdictStatus,
 };
 use serde_json::json;
 
@@ -899,6 +899,42 @@ fn render_all_stable_finding_codes() {
     );
     let md = render_markdown(&receipt);
     insta::assert_snapshot!(md);
+}
+
+#[test]
+fn render_includes_all_known_codes_from_types_registry() {
+    let findings: Vec<Finding> = KNOWN_CODES
+        .iter()
+        .map(|code| {
+            make_finding(
+                Severity::Warn,
+                code,
+                &format!("Synthetic message for {}", code),
+                Some(".tool-versions"),
+                None,
+            )
+        })
+        .collect();
+
+    let receipt = make_receipt(
+        VerdictStatus::Warn,
+        Counts {
+            info: 0,
+            warn: KNOWN_CODES.len() as u32,
+            error: 0,
+        },
+        findings,
+        Some(json!({"profile": "oss", "sources_used": [".tool-versions"]})),
+    );
+
+    let md = render_markdown(&receipt);
+    for code in KNOWN_CODES {
+        assert!(
+            md.contains(code),
+            "rendered markdown missing known code {}",
+            code
+        );
+    }
 }
 
 #[test]

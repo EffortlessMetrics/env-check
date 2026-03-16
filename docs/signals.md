@@ -29,6 +29,7 @@ This directory is the fast-changing playground for depth artifacts that are usef
 | Kind | Path | Description |
 |------|------|-------------|
 | `debug_log` | `extras/raw.log` | Probe debug transcript (commands, stdout/stderr) |
+| `github_annotations` | `extras/annotations.txt` (or configured path) | GitHub workflow command annotations (`::error`, `::warning`, `::notice`) |
 
 ## Promotion path
 
@@ -42,5 +43,5 @@ New depth artifacts follow this lifecycle:
 
 | Candidate | Status | Notes |
 |-----------|--------|-------|
-| Structured probe transcript | Experimental | Currently unstructured text in `extras/raw.log` |
-| Dependency graph | Not started | Would capture tool dependency relationships |
+| Structured probe transcript | Promoted | Condensed rows now emitted under `data.probes` in `report.json` |
+| Dependency graph | Promoted | Deterministic graph now emitted under `data.dependencies` (`nodes[]`, `edges[]`) |

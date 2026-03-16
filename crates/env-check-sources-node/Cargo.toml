@@ -1,0 +1,21 @@
+[package]
+name = "env-check-sources-node"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Node.js source parsers extracted as a microcrate."
+readme = "README.md"
+documentation = "https://github.com/EffortlessMetrics/env-check/tree/main/crates/env-check-sources-node"
+
+[dependencies]
+env-check-types.workspace = true
+anyhow.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]

@@ -9,11 +9,17 @@ homepage.workspace = true
 authors.workspace = true
 keywords.workspace = true
 categories.workspace = true
-description = "Parse tool requirements from .tool-versions, mise.toml, rust-toolchain.toml, and more"
-readme = "../../README.md"
+description = "Deterministic source discovery and parser set for repo-declared tool requirements."
+readme = "README.md"
+documentation = "https://github.com/EffortlessMetrics/env-check/tree/main/crates/env-check-sources"
 
 [dependencies]
 env-check-types.workspace = true
+env-check-parser-flags.workspace = true
+env-check-sources-go = { workspace = true, optional = true }
+env-check-sources-node = { workspace = true, optional = true }
+env-check-sources-python = { workspace = true, optional = true }
+env-check-sources-hash.workspace = true
 anyhow.workspace = true
 serde_json.workspace = true
 toml.workspace = true
@@ -23,3 +29,9 @@ globset.workspace = true
 proptest.workspace = true
 insta.workspace = true
 tempfile.workspace = true
+
+[features]
+default = ["parser-node", "parser-python", "parser-go"]
+parser-node = ["dep:env-check-sources-node", "env-check-parser-flags/parser-node"]
+parser-python = ["dep:env-check-sources-python", "env-check-parser-flags/parser-python"]
+parser-go = ["dep:env-check-sources-go", "env-check-parser-flags/parser-go"]

@@ -8,12 +8,16 @@ Feature: Environment sanity
     Given a repo fixture "no_sources"
     When I run env-check with profile "oss"
     Then the exit code is 0
+    And the verdict status is "skip"
     And the verdict reasons contain "no_sources"
 
   Scenario: Missing required tool fails under team
     Given a repo fixture "missing_tool"
     When I run env-check with profile "team"
     Then the exit code is 2
+    And the verdict status is "fail"
+    And the report contains finding code "env.missing_tool"
+    And the finding code "env.missing_tool" has help containing "Install"
 
   Scenario: Missing required tool warns under oss
     Given a repo fixture "missing_tool"
@@ -34,16 +38,22 @@ Feature: Environment sanity
     Given a repo fixture "malformed_tool_versions"
     When I run env-check with profile "oss"
     Then the exit code is 0
+    And the verdict status is "warn"
+    And the report contains finding code "env.source_parse_error"
 
   Scenario: Version mismatch fails under strict profile
     Given a repo fixture "version_mismatch"
     When I run env-check with profile "strict"
     Then the exit code is 2
+    And the verdict status is "fail"
+    And the report contains finding code "env.version_mismatch"
 
   Scenario: Version mismatch warns under oss profile
     Given a repo fixture "version_mismatch"
     When I run env-check with profile "oss"
     Then the exit code is 0
+    And the verdict status is "warn"
+    And the report contains finding code "env.version_mismatch"
 
   # ===========================================================================
   # Source scenarios
@@ -66,6 +76,20 @@ Feature: Environment sanity
     When I run env-check with profile "team"
     Then the exit code is 2
     And the report contains finding code "env.hash_mismatch"
+
+  Scenario: Hash manifest with mismatch fails under strict
+    Given a repo fixture "hash_manifest_mismatch"
+    When I run env-check with profile "strict"
+    Then the exit code is 2
+    And the verdict status is "fail"
+    And the report contains finding code "env.hash_mismatch"
+
+  Scenario: Malformed hash manifest produces parse error finding
+    Given a repo fixture "malformed_hash_manifest"
+    When I run env-check with profile "oss"
+    Then the exit code is 0
+    And the verdict status is "warn"
+    And the report contains finding code "env.source_parse_error"
 
   # ===========================================================================
   # Verdict scenarios
@@ -99,12 +123,29 @@ Feature: Environment sanity
     Then the exit code is 0
     And the report JSON is valid against the envelope schema
 
+  Scenario: Capabilities reflect unavailable source intake for empty input
+    Given a repo fixture "no_sources"
+    When I run env-check with profile "oss"
+    Then the exit code is 0
+    And the report capability "git" status is "unavailable"
+    And the report capability "inputs" status is "unavailable"
+    And the report capability "engine" status is "skipped"
+    And the report capability "baseline" status is "skipped"
+
   Scenario: Markdown output includes findings summary
     Given a repo fixture "missing_tool"
     When I run env-check with profile "oss" and markdown output
     Then the exit code is 0
     And the markdown contains "env-check:"
     And the markdown contains "Findings:"
+
+  Scenario: Capabilities reflect discovered inputs and skipped engine when no requirements
+    Given a repo fixture "valid_tools"
+    When I run env-check with profile "team"
+    Then the exit code is 0
+    And the report capability "git" status is "unavailable"
+    And the report capability "inputs" status is "available"
+    And the report capability "engine" status is "skipped"
 
   # ===========================================================================
   # Node.js source discovery scenarios
@@ -136,6 +177,32 @@ Feature: Environment sanity
     And the report contains source ".nvmrc"
     And the report contains source "package.json"
 
+  Scenario: Node.js parser can be disabled via config
+    Given a repo fixture "node_parser_disabled"
+    When I run env-check with profile "oss"
+    Then the exit code is 0
+    And the report does not contain source ".node-version"
+
+  Scenario: Node.js parser alias can be enabled via config
+    Given a repo fixture "parser_alias_enabled"
+    When I run env-check with profile "oss"
+    Then the exit code is 0
+    And the report contains source ".node-version"
+
+  Scenario: Invalid parser filter config fails fast
+    Given a repo fixture "invalid_sources_filter_config"
+    When I run env-check with profile "oss"
+    Then the exit code is 1
+    And the verdict status is "fail"
+    And the report contains finding code "tool.runtime_error"
+    And the verdict reasons contain "tool_error"
+
+  Scenario: Python parser can be disabled via config
+    Given a repo fixture "python_parser_disabled"
+    When I run env-check with profile "oss"
+    Then the exit code is 0
+    And the report does not contain source ".python-version"
+
   # ===========================================================================
   # Python source discovery scenarios
   # ===========================================================================
@@ -161,6 +228,12 @@ Feature: Environment sanity
     When I run env-check with profile "oss"
     Then the exit code is 0
     And the report contains source "go.mod"
+
+  Scenario: Go parser can be disabled via config
+    Given a repo fixture "go_parser_disabled"
+    When I run env-check with profile "oss"
+    Then the exit code is 0
+    And the report does not contain source "go.mod"
 
   # ===========================================================================
   # Rust toolchain scenarios
@@ -294,6 +367,15 @@ Feature: Environment sanity
     Then the exit code is 0
     And the stdout contains "Unknown code"
 
+  Scenario: CI provider metadata is captured for GitHub Actions
+    Given a repo fixture "valid_tools"
+    And environment variable "GITHUB_ACTIONS" is set to "true"
+    And environment variable "GITHUB_REPOSITORY" is set to "owner/repo"
+    And environment variable "GITHUB_WORKFLOW" is set to "ci"
+    When I run env-check with profile "team"
+    Then the exit code is 0
+    And the report ci provider is "github"
+
   # ===========================================================================
   # Verdict reasons scenarios
   # ===========================================================================
@@ -410,6 +492,7 @@ Feature: Environment sanity
     Given a repo fixture "missing_tool"
     When I run env-check with profile "team"
     Then the exit code is 2
+    And the report is stable across reruns
     And the report JSON is valid against the envelope schema
 
   # ===========================================================================

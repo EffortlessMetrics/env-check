@@ -316,6 +316,22 @@ proptest! {
         prop_assert_eq!(reqs[0].constraint.as_deref(), Some(first.as_str()));
     }
 
+    /// mise.toml parser handles table values by reading `version`
+    #[test]
+    fn mise_toml_table_version_values(
+        tool in "[a-z][a-z0-9_]{0,10}",
+        version in "[0-9]{1,2}\\.[0-9]{1,2}",
+    ) {
+        let content = format!("[tools]\n{} = {{ version = \"{}\", backend = \"asdf\" }}", tool, version);
+        let root = Path::new("/fake");
+        let path = root.join(".mise.toml");
+        let result = parse_mise_toml_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+        prop_assert_eq!(reqs[0].constraint.as_deref(), Some(version.as_str()));
+    }
+
     /// mise.toml parser handles multiple tools
     #[test]
     fn mise_toml_multiple_tools(
@@ -1469,6 +1485,24 @@ proptest! {
         prop_assert_eq!(reqs[0].constraint.as_deref(), Some(constraint.as_str()));
     }
 
+    /// package.json handles valid engines.npm constraints
+    #[test]
+    fn package_json_valid_engines_npm(
+        major in 1u32..20,
+        minor in 0u32..30,
+    ) {
+        let constraint = format!(">={}.{}", major, minor);
+        let content = format!(r#"{{"engines": {{"npm": "{}"}}}}"#, constraint);
+        let root = Path::new("/fake");
+        let path = root.join("package.json");
+        let result = parse_package_json_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        prop_assert_eq!(reqs.len(), 1);
+        prop_assert_eq!(reqs[0].tool.as_str(), "npm");
+        prop_assert_eq!(reqs[0].constraint.as_deref(), Some(constraint.as_str()));
+    }
+
     /// package.json handles packageManager field
     #[test]
     fn package_json_package_manager(
@@ -1533,6 +1567,31 @@ proptest! {
         prop_assert_eq!(reqs.len(), 2);
         prop_assert!(reqs.iter().any(|r| r.tool == "node"));
         prop_assert!(reqs.iter().any(|r| r.tool == pm));
+    }
+
+    /// package.json prefers packageManager pin when engines.npm is also present
+    #[test]
+    fn package_json_prefers_pm_for_npm(
+        npm_major in 1u32..20,
+        npm_minor in 0u32..30,
+        pm_major in 1u32..20,
+        pm_minor in 0u32..30,
+        pm_patch in 0u32..30,
+    ) {
+        let engines_constraint = format!(">={}.{}", npm_major, npm_minor);
+        let pm_version = format!("{}.{}.{}", pm_major, pm_minor, pm_patch);
+        let content = format!(
+            r#"{{"engines": {{"npm": "{}"}}, "packageManager": "npm@{}"}}"#,
+            engines_constraint, pm_version
+        );
+        let root = Path::new("/fake");
+        let path = root.join("package.json");
+        let result = parse_package_json_str(root, &path, &content);
+        prop_assert!(result.is_ok());
+        let reqs = result.unwrap();
+        let npm_reqs: Vec<_> = reqs.iter().filter(|r| r.tool == "npm").collect();
+        prop_assert_eq!(npm_reqs.len(), 1);
+        prop_assert_eq!(npm_reqs[0].constraint.as_deref(), Some(pm_version.as_str()));
     }
 
     /// package.json empty object returns no requirements

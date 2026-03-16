@@ -1,9 +1,9 @@
-//! Markdown renderer for env-check receipts.
+//! Renderers for env-check receipts.
 //!
 //! Rendering is pure and deterministic. Any truncation/caps must already be reflected
 //! in the receipt (e.g., `data.truncated=true`).
 
-use env_check_types::{ReceiptEnvelope, Severity, VerdictStatus};
+use env_check_types::{ReceiptEnvelope, Severity, VerdictStatus, finding_sort_key};
 
 pub fn render_markdown(report: &ReceiptEnvelope) -> String {
     let status = match report.verdict.status {
@@ -87,4 +87,52 @@ pub fn render_markdown(report: &ReceiptEnvelope) -> String {
     }
 
     out
+}
+
+/// Render receipt findings as GitHub Actions workflow command annotations.
+///
+/// This output can be written to a side artifact and then replayed in CI logs.
+/// The rendered order is deterministic and capped by `max_findings`.
+pub fn render_github_annotations(report: &ReceiptEnvelope, max_findings: usize) -> String {
+    if max_findings == 0 {
+        return String::new();
+    }
+
+    let mut items: Vec<_> = report.findings.iter().collect();
+    items.sort_by_key(|f| finding_sort_key(f));
+
+    let mut out = String::new();
+    for finding in items.into_iter().take(max_findings) {
+        let level = match finding.severity {
+            Severity::Error => "error",
+            Severity::Warn => "warning",
+            Severity::Info => "notice",
+        };
+
+        let mut props: Vec<String> = vec![format!("title={}", escape_property(&finding.code))];
+        if let Some(loc) = &finding.location {
+            props.push(format!("file={}", escape_property(&loc.path)));
+            if let Some(line) = loc.line {
+                props.push(format!("line={}", line));
+            }
+            if let Some(col) = loc.col {
+                props.push(format!("col={}", col));
+            }
+        }
+
+        let message = escape_message(&finding.message);
+        out.push_str(&format!("::{} {}::{}\n", level, props.join(","), message));
+    }
+
+    out
+}
+
+fn escape_message(s: &str) -> String {
+    s.replace('%', "%25")
+        .replace('\r', "%0D")
+        .replace('\n', "%0A")
+}
+
+fn escape_property(s: &str) -> String {
+    escape_message(s).replace(':', "%3A").replace(',', "%2C")
 }

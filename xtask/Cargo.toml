@@ -4,9 +4,20 @@ version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+description = "Workspace maintenance commands for schema checks, conformance checks, and adoption checks."
+readme = "README.md"
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+documentation = "https://github.com/EffortlessMetrics/env-check/tree/main/xtask"
 publish = false
 
 [dependencies]
 anyhow.workspace = true
 serde_json.workspace = true
 jsonschema.workspace = true
+env-check-types.workspace = true
+env-check-domain.workspace = true
+toml.workspace = true

@@ -111,6 +111,43 @@
                 }
               }
             },
+            "dependencies": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "nodes": {
+                  "type": "array",
+                  "default": [],
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "edges": {
+                  "type": "array",
+                  "default": [],
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "from",
+                      "to",
+                      "reason"
+                    ],
+                    "properties": {
+                      "from": {
+                        "type": "string"
+                      },
+                      "to": {
+                        "type": "string"
+                      },
+                      "reason": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            },
             "truncated": {
               "type": "boolean",
               "default": false
@@ -122,6 +159,13 @@
                 "probe_kinds": { "type": "array", "items": { "type": "string" } }
               },
               "additionalProperties": false
+            },
+            "source_data": {
+              "type": "object",
+              "default": {},
+              "additionalProperties": {
+                "type": "object"
+              }
             }
           }
         }
