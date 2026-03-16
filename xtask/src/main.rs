@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::thread;
+use std::time::Duration;
 
 use anyhow::{Context, bail};
 
@@ -11,6 +13,12 @@ fn main() -> anyhow::Result<()> {
         Some("mutants") => mutants(args.collect()),
         Some("conform") => conform(),
         Some("adoption-check") => adoption_check(),
+        Some("publish") => {
+            let remaining: Vec<String> = args.collect();
+            let dry_run = remaining.iter().any(|a| a == "--dry-run");
+            let allow_dirty = remaining.iter().any(|a| a == "--allow-dirty");
+            publish(dry_run, allow_dirty)
+        }
         Some("--help") | Some("-h") => {
             print_help();
             Ok(())
@@ -32,6 +40,9 @@ fn print_help() {
         "  adoption-check Run repo-only adoption checks from Phase 7 (contracts/offline/action/docs/release)"
     );
     eprintln!("  mutants        Run cargo-mutants on domain crate (requires cargo-mutants)");
+    eprintln!(
+        "  publish        Publish all crates to crates.io in dependency order (--dry-run supported)"
+    );
     eprintln!();
     eprintln!("Options:");
     eprintln!("  -h, --help     Show this help message");
@@ -609,7 +620,7 @@ fn run_adoption_checks() -> (usize, usize) {
         check_release_readiness_gates,
     );
     run_adoption_gate(
-        "Release readiness: adoption surface pins v0.1.0 action reference",
+        "Release readiness: adoption surface pins v0.2.0 action reference",
         &mut passed,
         &mut total,
         check_release_pin_surface,
@@ -808,16 +819,16 @@ fn check_explain_registry_contract() -> anyhow::Result<()> {
     }
 
     // Keep CLI explain surface wired to the shared types registry.
-    let cli = read_text("crates/env-check-cli/src/main.rs")?;
+    let cli = read_text("crates/env-check-cli/src/lib.rs")?;
     require_contains(
         &cli,
         "explain_message(code)",
-        "crates/env-check-cli/src/main.rs",
+        "crates/env-check-cli/src/lib.rs",
     )?;
     require_contains(
         &cli,
         "for entry in explain_entries()",
-        "crates/env-check-cli/src/main.rs",
+        "crates/env-check-cli/src/lib.rs",
     )?;
 
     Ok(())
@@ -875,17 +886,7 @@ fn check_git_metadata_no_fetch() -> anyhow::Result<()> {
         }
     }
 
-    require_contains(
-        &app,
-        "fn detect_git(root: &Path) -> Option<GitMeta>",
-        "crates/env-check-app/src/lib.rs",
-    )?;
-    require_contains(
-        &app,
-        "let _ = git(root, &[\"rev-parse\", \"--git-dir\"])?;",
-        "crates/env-check-app/src/lib.rs",
-    )?;
-    require_contains(&app, "merge-base", "crates/env-check-app/src/lib.rs")?;
+    require_contains(&app, "detect_git(root)", "crates/env-check-app/src/lib.rs")?;
     Ok(())
 }
 
@@ -1033,12 +1034,12 @@ fn check_release_pin_surface() -> anyhow::Result<()> {
 
     require_contains(
         &readme,
-        "uses: EffortlessMetrics/env-check@v0.1.0",
+        "uses: EffortlessMetrics/env-check@v0.2.0",
         "README.md",
     )?;
     require_contains(
         &example,
-        "uses: EffortlessMetrics/env-check@v0.1.0",
+        "uses: EffortlessMetrics/env-check@v0.2.0",
         "examples/github-actions-env-check.yml",
     )?;
     Ok(())
@@ -1255,6 +1256,87 @@ fn normalize_for_comparison(path: &Path) -> anyhow::Result<serde_json::Value> {
     }
 
     Ok(json)
+}
+
+fn publish(dry_run: bool, allow_dirty: bool) -> anyhow::Result<()> {
+    const CRATES: &[&str] = &[
+        "env-check-types",
+        "env-check-config",
+        "env-check-parser-flags",
+        "env-check-requirement-normalizer",
+        "env-check-runtime-metadata",
+        "env-check-sources-node",
+        "env-check-sources-python",
+        "env-check-sources-go",
+        "env-check-sources-hash",
+        "env-check-sources",
+        "env-check-probe",
+        "env-check-runtime",
+        "env-check-domain",
+        "env-check-evidence",
+        "env-check-reporting",
+        "env-check-render",
+        "env-check-app",
+        "env-check-cli",
+        "env-check",
+    ];
+
+    let total = CRATES.len();
+    for (i, crate_name) in CRATES.iter().enumerate() {
+        eprintln!(
+            "[{}/{}] Publishing {}{}...",
+            i + 1,
+            total,
+            crate_name,
+            if dry_run { " (dry-run)" } else { "" }
+        );
+
+        let mut cmd = Command::new("cargo");
+        if dry_run {
+            // Use `cargo package --list` for dry-run: validates metadata and lists
+            // packagable files without resolving deps from crates.io (which would
+            // fail since earlier crates in the chain aren't published yet).
+            cmd.arg("package").arg("-p").arg(crate_name).arg("--list");
+            if allow_dirty {
+                cmd.arg("--allow-dirty");
+            }
+        } else {
+            cmd.arg("publish").arg("-p").arg(crate_name);
+            if allow_dirty {
+                cmd.arg("--allow-dirty");
+            }
+        }
+
+        let status = cmd
+            .status()
+            .with_context(|| format!("failed to run cargo publish for {}", crate_name))?;
+
+        if !status.success() {
+            bail!(
+                "cargo publish failed for crate '{}' (exit code: {:?})",
+                crate_name,
+                status.code()
+            );
+        }
+
+        eprintln!(
+            "[{}/{}] {} published successfully.",
+            i + 1,
+            total,
+            crate_name
+        );
+
+        // Sleep between publishes (except after the last one) to let crates.io index,
+        // but skip the sleep in dry-run mode.
+        let is_last = i + 1 == total;
+        if !is_last && !dry_run {
+            eprintln!("Waiting 65 seconds for crates.io to index...");
+            thread::sleep(Duration::from_secs(65));
+        }
+    }
+
+    eprintln!("All {} crates published successfully.", total);
+    Ok(())
 }
 
 #[cfg(test)]

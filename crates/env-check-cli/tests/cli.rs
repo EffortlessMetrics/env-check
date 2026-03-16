@@ -28,9 +28,9 @@ fn envelope_schema() -> Validator {
 }
 
 /// Create a Command for the env-check binary.
-/// Uses CARGO_BIN_EXE_env-check which is set by cargo test automatically.
+/// Uses CARGO_BIN_EXE_env-check-cli which is set by cargo test automatically.
 fn env_check_cmd() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_env-check"))
+    Command::new(env!("CARGO_BIN_EXE_env-check-cli"))
 }
 
 // =============================================================================

@@ -9,10 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `env-check` facade crate for crates.io (`cargo install env-check`)
+- Apache-2.0 license file (dual MIT/Apache-2.0)
+- `xtask publish` command for publishing all 19 crates in dependency order
+- `publish-crates` job in release workflow for automated crates.io publishing
 - Documentation for performance benchmarks (`docs/performance.md`)
 - Troubleshooting guide (`docs/troubleshooting.md`)
 - Security policy (`SECURITY.md`)
 - Code of Conduct (`CODE_OF_CONDUCT.md`)
+
+### Changed
+
+- Refactored `env-check-cli` from binary-only to library + binary for reuse
+- Internal crate READMEs now include crates.io metadata notices
+- Updated release documentation for 19-crate publish workflow
 
 ## [0.2.0] - 2026-03-13
 

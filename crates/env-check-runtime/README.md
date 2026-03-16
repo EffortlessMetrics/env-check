@@ -1,5 +1,8 @@
 # env-check-runtime
 
+> **Note**: This is an internal implementation detail of [env-check](https://crates.io/crates/env-check).
+> API not covered by semver guarantees. Use `cargo install env-check` instead.
+
 Small runtime helper crate used by the app/cli orchestration boundary.
 
 - Atomic file write helper (`write_atomic`) for artifact emission.

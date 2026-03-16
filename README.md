@@ -101,6 +101,14 @@ env-check completions fish   # fish
 env-check completions powershell  # PowerShell
 ```
 
+## GitHub Actions
+
+```yaml
+- uses: EffortlessMetrics/env-check@v0.2.0
+  with:
+    profile: team
+```
+
 ## Exit Codes
 
 - `0`: success path (including pass/warn depending on mode/policy settings)

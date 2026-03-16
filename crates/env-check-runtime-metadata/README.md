@@ -1,5 +1,8 @@
 # env-check-runtime-metadata
 
+> **Note**: This is an internal implementation detail of [env-check](https://crates.io/crates/env-check).
+> API not covered by semver guarantees. Use `cargo install env-check` instead.
+
 Runtime metadata helpers extracted from `env-check-runtime` so metadata behavior is isolated
 into a dedicated microcrate:
 

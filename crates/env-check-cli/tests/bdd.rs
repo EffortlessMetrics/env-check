@@ -88,7 +88,7 @@ async fn when_run_explain(world: &mut EnvWorld, code: String) {
         world.tmp = Some(tempfile::tempdir().expect("tempdir"));
     }
 
-    let exe = env!("CARGO_BIN_EXE_env-check");
+    let exe = env!("CARGO_BIN_EXE_env-check-cli");
 
     let mut cmd = Command::new(exe);
     cmd.arg("explain").arg(&code);
@@ -121,7 +121,7 @@ fn run_env_check(
 
     // Cargo exposes the built test binary paths via env vars, even for
     // harness=false tests.
-    let exe = env!("CARGO_BIN_EXE_env-check");
+    let exe = env!("CARGO_BIN_EXE_env-check-cli");
 
     let out_path = tmp.path().join("artifacts/env-check/report.json");
     let md_path = tmp.path().join("artifacts/env-check/comment.md");
@@ -186,7 +186,7 @@ fn deterministic_probe_path(root: &Path) -> std::ffi::OsString {
         entries.push(fixture_bin);
     }
 
-    let exe = PathBuf::from(env!("CARGO_BIN_EXE_env-check"));
+    let exe = PathBuf::from(env!("CARGO_BIN_EXE_env-check-cli"));
     if let Some(exe_dir) = exe.parent() {
         entries.push(exe_dir.to_path_buf());
     }

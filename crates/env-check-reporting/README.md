@@ -1,5 +1,8 @@
 # env-check-reporting
 
+> **Note**: This is an internal implementation detail of [env-check](https://crates.io/crates/env-check).
+> API not covered by semver guarantees. Use `cargo install env-check` instead.
+
 Focused crate for shaping and serializing the `data` and `capabilities` sections
 of an env-check receipt.
 

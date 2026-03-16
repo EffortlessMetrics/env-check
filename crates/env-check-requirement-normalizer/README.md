@@ -1,5 +1,8 @@
 # env-check-requirement-normalizer
 
+> **Note**: This is an internal implementation detail of [env-check](https://crates.io/crates/env-check).
+> API not covered by semver guarantees. Use `cargo install env-check` instead.
+
 Pure helper crate for request normalization in env-check app orchestration.
 
 It currently applies stable, deterministic transforms for:
