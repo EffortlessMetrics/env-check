@@ -16,6 +16,9 @@ fuzz/Cargo.lock
 # Windows artifacts
 nul
 
+# Coverage profiling artifacts
+*.profraw
+
 # Test/Tool outputs
 artifacts/
 temp/
