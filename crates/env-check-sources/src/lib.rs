@@ -690,6 +690,107 @@ channel = "1.75.0"
     }
 
     #[test]
+    fn mise_table_version_integer_constraint() {
+        let root = Path::new("/fake");
+        let path = root.join(".mise.toml");
+        let reqs = parse_mise_toml_str(root, &path, "[tools]\nnode = { version = 20 }")
+            .expect("parse mise with integer table version");
+        assert_eq!(reqs.len(), 1);
+        assert_eq!(reqs[0].constraint.as_deref(), Some("20"));
+    }
+
+    #[test]
+    fn mise_table_version_array_constraint() {
+        let root = Path::new("/fake");
+        let path = root.join(".mise.toml");
+        let reqs = parse_mise_toml_str(
+            root,
+            &path,
+            "[tools]\nnode = { version = [\"20\", \"18\"] }",
+        )
+        .expect("parse mise with array table version");
+        assert_eq!(reqs.len(), 1);
+        // First element of array is used
+        assert_eq!(reqs[0].constraint.as_deref(), Some("20"));
+    }
+
+    #[test]
+    fn mise_table_version_unsupported_type_skipped() {
+        let root = Path::new("/fake");
+        let path = root.join(".mise.toml");
+        let reqs = parse_mise_toml_str(root, &path, "[tools]\nnode = { version = true }")
+            .expect("parse mise with boolean table version");
+        // Boolean version can't be parsed, so no constraint
+        assert_eq!(reqs.len(), 1);
+        assert!(reqs[0].constraint.is_none());
+    }
+
+    #[test]
+    fn mise_integer_constraint_without_table() {
+        let root = Path::new("/fake");
+        let path = root.join(".mise.toml");
+        let reqs = parse_mise_toml_str(root, &path, "[tools]\npython = 3")
+            .expect("parse mise with integer value");
+        assert_eq!(reqs.len(), 1);
+        assert_eq!(reqs[0].constraint.as_deref(), Some("3"));
+    }
+
+    #[test]
+    fn parse_all_with_invalid_node_version_emits_finding() {
+        let dir = tempdir().expect("temp dir");
+        let root = dir.path();
+
+        // Write an invalid package.json
+        fs::write(root.join("package.json"), "not json at all").expect("write bad package.json");
+
+        let parsed = parse_all(root, &[]);
+        assert!(
+            parsed
+                .findings
+                .iter()
+                .any(|f| f.code == codes::ENV_SOURCE_PARSE_ERROR),
+            "expected parse error finding for invalid package.json"
+        );
+    }
+
+    #[test]
+    fn parse_all_with_invalid_rust_toolchain_emits_finding() {
+        let dir = tempdir().expect("temp dir");
+        let root = dir.path();
+
+        // Write an invalid rust-toolchain.toml (TOML with wrong structure)
+        fs::write(root.join("rust-toolchain.toml"), "[bad]\nstuff = true\n")
+            .expect("write bad rust-toolchain.toml");
+
+        let parsed = parse_all(root, &[]);
+        assert!(
+            parsed
+                .findings
+                .iter()
+                .any(|f| f.code == codes::ENV_SOURCE_PARSE_ERROR),
+            "expected parse error finding for invalid rust-toolchain.toml"
+        );
+    }
+
+    #[test]
+    fn parse_all_with_invalid_go_mod_emits_finding() {
+        let dir = tempdir().expect("temp dir");
+        let root = dir.path();
+
+        // go.mod without a go directive
+        fs::write(root.join("go.mod"), "module example.com/foo\n").expect("write bad go.mod");
+
+        let parsed = parse_all(root, &[]);
+        assert!(
+            parsed
+                .findings
+                .iter()
+                .any(|f| f.code == codes::ENV_SOURCE_PARSE_ERROR),
+            "expected parse error finding for invalid go.mod"
+        );
+    }
+
+    #[test]
     fn parse_all_preserves_mise_complex_tool_shapes_in_source_data() {
         let dir = tempdir().expect("temp dir");
         let root = dir.path();

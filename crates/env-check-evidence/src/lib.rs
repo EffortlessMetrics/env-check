@@ -653,8 +653,8 @@ mod tests {
     fn dependency_graph_skips_empty_tool_name() {
         let requirements = vec![
             req("node", Some(">=20"), ProbeKind::PathTool),
-            req("", None, ProbeKind::PathTool),       // empty tool name
-            req("  ", None, ProbeKind::PathTool),      // whitespace-only tool name
+            req("", None, ProbeKind::PathTool), // empty tool name
+            req("  ", None, ProbeKind::PathTool), // whitespace-only tool name
         ];
         let graph = dependency_graph(&requirements);
         // Empty tool is skipped, whitespace-only is not (trim check is `is_empty` after trim)

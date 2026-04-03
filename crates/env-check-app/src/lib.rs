@@ -1334,4 +1334,24 @@ disabled = ["python"]
         assert!(ci.job.is_none());
         assert!(ci.run_id.is_none());
     }
+
+    #[test]
+    fn check_options_default_has_expected_values() {
+        let opts = CheckOptions::default();
+        assert!(opts.debug_log_path.is_none());
+        assert_eq!(opts.probe_timeout_secs, DEFAULT_PROBE_TIMEOUT_SECS);
+    }
+
+    #[test]
+    fn run_check_wrapper_works_on_empty_dir() {
+        let root = temp_root_dir("run-check-wrapper");
+        // run_check is the backwards-compat wrapper around run_check_with_options
+        let result = run_check(&root, None, Profile::Oss, FailOn::Error);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        // Empty dir should skip (no sources)
+        assert_eq!(output.receipt.verdict.status, VerdictStatus::Skip);
+        assert_eq!(output.exit_code, 0);
+        let _ = fs::remove_dir_all(&root);
+    }
 }

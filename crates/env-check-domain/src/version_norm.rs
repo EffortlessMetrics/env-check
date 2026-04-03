@@ -134,23 +134,9 @@ pub fn normalize_version(input: &str) -> Result<NormalizedVersion, VersionParseE
         return Err(VersionParseError::NoVersionFound);
     }
 
-    // Strip optional 'v' prefix (but not if followed by another letter, e.g., "version")
-    let stripped = if extracted.starts_with('v') || extracted.starts_with('V') {
-        let after_v = &extracted[1..];
-        // Only strip if the next char is a digit (v1.2.3 → 1.2.3, but "version" stays)
-        if after_v
-            .chars()
-            .next()
-            .map(|c| c.is_ascii_digit())
-            .unwrap_or(false)
-        {
-            after_v
-        } else {
-            extracted
-        }
-    } else {
-        extracted
-    };
+    // Note: extract_version_token already strips v/V prefixes via extract_numeric_start,
+    // so `extracted` will never start with v/V followed by a digit at this point.
+    let stripped = extracted;
 
     // Try to parse as-is first (handles full semver with prerelease/build)
     if let Ok(version) = Version::parse(stripped) {
@@ -1192,7 +1178,10 @@ mod tests {
 
     #[test]
     fn version_parse_error_display() {
-        assert_eq!(VersionParseError::EmptyInput.to_string(), "empty version input");
+        assert_eq!(
+            VersionParseError::EmptyInput.to_string(),
+            "empty version input"
+        );
         assert_eq!(
             VersionParseError::NoVersionFound.to_string(),
             "no version pattern found"
@@ -1234,6 +1223,18 @@ mod tests {
     fn extract_numeric_start_no_digits() {
         // Input with no digits at all should return ""
         assert_eq!(extract_numeric_start("abc"), "");
+    }
+
+    #[test]
+    fn extract_numeric_start_empty_input() {
+        // Empty string -> s.is_empty() returns true -> return ""
+        assert_eq!(extract_numeric_start(""), "");
+    }
+
+    #[test]
+    fn extract_version_token_version_prefix_no_content() {
+        // "version " with nothing after -> extract_numeric_start("") -> ""
+        assert_eq!(extract_version_token("version "), "");
     }
 
     #[test]
@@ -1322,6 +1323,32 @@ mod tests {
         // Result has < 2 dots and no dash/plus -> zero_fill (line 459)
         assert_eq!(extract_semver_pattern("1"), "1.0.0");
         assert_eq!(extract_semver_pattern("42"), "42.0.0");
+    }
+
+    #[test]
+    fn extract_semver_pattern_leading_non_digit() {
+        // "x1.2.3" -> Major state: 'x' not digit, not '.', result IS empty -> fall through (no break)
+        // then '1' pushed, '.', Minor, '2', '.', Patch, '3' -> "1.2.3"
+        assert_eq!(extract_semver_pattern("x1.2.3"), "1.2.3");
+    }
+
+    #[test]
+    fn extract_semver_pattern_minor_trailing_dot_non_digit() {
+        // "1.x2.3" -> Major: '1' pushed, '.', Minor: 'x' not digit, not '.', not '-'/'+',
+        // result is "1." which ends_with('.') -> fall through (no break, line 432)
+        // then '2' pushed in Minor, '.', Patch, '3' -> "1.23"... wait, state stays Minor
+        // Actually after falling through in Minor with 'x', we go to next char '2' still in Minor state
+        // '2' is digit, pushed. Then '.' not ending with '.', state=Patch. '3' digit pushed.
+        // result = "1.23" with dot_count=1, zero-filled to "1.23.0"
+        // Hmm, that's not right. Let me re-trace.
+        // i=0 c='1' Major: digit, push. result="1"
+        // i=1 c='.' Major: '.', not empty, push, state=Minor. result="1."
+        // i=2 c='x' Minor: not digit, not '.', not '-'/'+'. result.ends_with('.') = true -> fall through
+        // i=3 c='2' Minor: digit, push. result="1.2"
+        // i=4 c='.' Minor: '.', not ends_with('.'), push, state=Patch. result="1.2."
+        // i=5 c='3' Patch: digit, push. result="1.2.3"
+        // end. dot_count=2, return "1.2.3"
+        assert_eq!(extract_semver_pattern("1.x2.3"), "1.2.3");
     }
 
     #[test]

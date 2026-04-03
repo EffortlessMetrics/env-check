@@ -1326,12 +1326,17 @@ mod tests {
         }];
         let out = evaluate(&reqs, &obs, &policy, &["rust-toolchain.toml".into()]);
 
-        assert!(out
-            .findings
-            .iter()
-            .any(|f| f.code == codes::ENV_TOOLCHAIN_MISSING
-                && f.message.contains("rustup not found")));
-        assert!(out.verdict.reasons.contains(&"toolchain_missing".to_string()));
+        assert!(
+            out.findings
+                .iter()
+                .any(|f| f.code == codes::ENV_TOOLCHAIN_MISSING
+                    && f.message.contains("rustup not found"))
+        );
+        assert!(
+            out.verdict
+                .reasons
+                .contains(&"toolchain_missing".to_string())
+        );
     }
 
     // ==================== severity_for coverage for runtime/wildcard by profile ====================
@@ -1411,10 +1416,11 @@ mod tests {
             data: None,
         }];
         let out = evaluate_with_extras(&[], &[], &policy, &[".tool-versions".into()], &extra);
-        assert!(out
-            .verdict
-            .reasons
-            .contains(&"source_parse_error".to_string()));
+        assert!(
+            out.verdict
+                .reasons
+                .contains(&"source_parse_error".to_string())
+        );
     }
 
     // ==================== reasons wildcard (unknown code) ====================

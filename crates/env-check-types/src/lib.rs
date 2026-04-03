@@ -773,6 +773,17 @@ mod tests {
     // =========================================================================
 
     #[test]
+    fn explain_entries_returns_all_entries() {
+        let entries = explain_entries();
+        assert!(!entries.is_empty(), "explain entries should not be empty");
+        // Verify each entry has non-empty fields
+        for entry in entries {
+            assert!(!entry.id.is_empty());
+            assert!(!entry.message.is_empty());
+        }
+    }
+
+    #[test]
     fn explain_message_supports_codes_and_check_ids() {
         assert!(explain_message(codes::ENV_MISSING_TOOL).contains("PATH"));
         assert!(explain_message(checks::PRESENCE).contains("PATH"));

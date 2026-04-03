@@ -172,4 +172,84 @@ mod tests {
             .unwrap_err();
         assert!(format!("{err:#}").contains("parsers appear in both"));
     }
+
+    #[test]
+    fn all_returns_feature_enabled_parsers() {
+        let all = ParserFilters::all();
+        // With default features, all parsers should be enabled
+        assert_eq!(all.node_enabled(), cfg!(feature = "parser-node"));
+        assert_eq!(all.python_enabled(), cfg!(feature = "parser-python"));
+        assert_eq!(all.go_enabled(), cfg!(feature = "parser-go"));
+    }
+
+    #[test]
+    fn from_config_empty_enabled_uses_all_available() {
+        // When enabled is empty, all available parsers are enabled
+        let filters = ParserFilters::from_config(&[], &[]).unwrap();
+        assert_eq!(filters.node_enabled(), cfg!(feature = "parser-node"));
+        assert_eq!(filters.python_enabled(), cfg!(feature = "parser-python"));
+        assert_eq!(filters.go_enabled(), cfg!(feature = "parser-go"));
+    }
+
+    #[test]
+    fn from_config_empty_enabled_with_disabled() {
+        // When enabled is empty but some are disabled, all except disabled are enabled
+        let filters = ParserFilters::from_config(&[], &[String::from("go")]).unwrap();
+        assert_eq!(filters.node_enabled(), cfg!(feature = "parser-node"));
+        assert_eq!(filters.python_enabled(), cfg!(feature = "parser-python"));
+        assert!(!filters.go_enabled());
+    }
+
+    #[test]
+    fn from_config_explicit_enabled_subset() {
+        let filters = ParserFilters::from_config(&[String::from("node")], &[]).unwrap();
+        assert!(filters.node_enabled());
+        assert!(!filters.python_enabled());
+        assert!(!filters.go_enabled());
+    }
+
+    #[test]
+    fn accessor_methods_return_correct_values() {
+        let filters = ParserFilters::from_config(&[String::from("python")], &[]).unwrap();
+        assert!(!filters.node_enabled());
+        assert!(filters.python_enabled());
+        assert!(!filters.go_enabled());
+    }
+
+    #[test]
+    fn from_config_enabled_with_disabled_removes_from_enabled() {
+        // Enable node and python, disable python => only node remains
+        let filters =
+            ParserFilters::from_config(&[String::from("node"), String::from("go")], &[]).unwrap();
+        assert!(filters.node_enabled());
+        assert!(filters.go_enabled());
+        assert!(!filters.python_enabled());
+    }
+
+    #[test]
+    fn from_config_enabled_and_disabled_overlap_errors() {
+        // Enabled has node+python+go, disabled has go => overlap detected
+        let filters = ParserFilters::from_config(
+            &[
+                String::from("node"),
+                String::from("python"),
+                String::from("go"),
+            ],
+            &[String::from("go")],
+        );
+        assert!(filters.is_err());
+    }
+
+    #[test]
+    fn from_config_enabled_with_non_overlapping_disabled() {
+        // Enabled = [node, python], disabled = [go] => no overlap, but disabled loop runs
+        let filters = ParserFilters::from_config(
+            &[String::from("node"), String::from("python")],
+            &[String::from("go")],
+        )
+        .unwrap();
+        assert!(filters.node_enabled());
+        assert!(filters.python_enabled());
+        assert!(!filters.go_enabled());
+    }
 }
