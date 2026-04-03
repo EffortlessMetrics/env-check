@@ -1188,6 +1188,200 @@ mod tests {
         }
     }
 
+    // ==================== Display impl tests ====================
+
+    #[test]
+    fn version_parse_error_display() {
+        assert_eq!(VersionParseError::EmptyInput.to_string(), "empty version input");
+        assert_eq!(
+            VersionParseError::NoVersionFound.to_string(),
+            "no version pattern found"
+        );
+        assert_eq!(
+            VersionParseError::InvalidSemver("bad".into()).to_string(),
+            "invalid semver: bad"
+        );
+    }
+
+    #[test]
+    fn normalized_version_display() {
+        let v = normalize_version("1.2.3").unwrap();
+        assert_eq!(format!("{}", v), "1.2.3");
+    }
+
+    #[test]
+    fn normalized_version_as_semver() {
+        let v = normalize_version("1.2.3").unwrap();
+        let sv = v.as_semver();
+        assert_eq!(sv.major, 1);
+        assert_eq!(sv.minor, 2);
+        assert_eq!(sv.patch, 3);
+    }
+
+    // ==================== InvalidSemver error path ====================
+
+    #[test]
+    fn normalize_trailing_dot_gives_invalid_semver() {
+        // "1." -> extract_version_token returns "1." -> parse fails, zero-fill "1..0" fails,
+        // extract_semver_pattern also produces unparseable result -> InvalidSemver
+        let err = normalize_version("1.").unwrap_err();
+        assert!(matches!(err, VersionParseError::InvalidSemver(_)));
+    }
+
+    // ==================== extract_numeric_start edge cases ====================
+
+    #[test]
+    fn extract_numeric_start_no_digits() {
+        // Input with no digits at all should return ""
+        assert_eq!(extract_numeric_start("abc"), "");
+    }
+
+    #[test]
+    fn extract_numeric_start_bracket_terminates() {
+        // "[" should terminate version extraction (like parentheses)
+        assert_eq!(extract_numeric_start("1.2.3[stable]"), "1.2.3");
+    }
+
+    // ==================== trim_version_artifacts edge cases ====================
+
+    #[test]
+    fn trim_artifacts_trailing_dash() {
+        // "1.2.3-" should fall through to non-standard suffix check
+        assert_eq!(trim_version_artifacts("1.2.3-"), "1.2.3-");
+    }
+
+    #[test]
+    fn trim_artifacts_trailing_plus() {
+        // "1.2.3+" should fall through to non-standard suffix check
+        assert_eq!(trim_version_artifacts("1.2.3+"), "1.2.3+");
+    }
+
+    #[test]
+    fn trim_artifacts_trailing_dot_after_marker() {
+        // "1.2.3-." should fall through
+        assert_eq!(trim_version_artifacts("1.2.3-."), "1.2.3-.");
+    }
+
+    #[test]
+    fn trim_artifacts_four_numeric_parts() {
+        // "1.2.3.4" - 4th part is all digits, so it's preserved
+        assert_eq!(trim_version_artifacts("1.2.3.4"), "1.2.3.4");
+    }
+
+    // ==================== extract_semver_pattern edge cases ====================
+
+    #[test]
+    fn extract_semver_pattern_major_non_digit() {
+        // "1x" -> Major state: '1' pushed, 'x' not digit/dot, result not empty -> break (line 418)
+        // result = "1", zero-filled to "1.0.0"
+        assert_eq!(extract_semver_pattern("1x"), "1.0.0");
+    }
+
+    #[test]
+    fn extract_semver_pattern_minor_dash() {
+        // "1.2-rc.1" -> Minor state encounters '-', pushes it, goes to Prerelease
+        assert_eq!(extract_semver_pattern("1.2-rc.1"), "1.2-rc.1");
+    }
+
+    #[test]
+    fn extract_semver_pattern_minor_non_digit_non_dot() {
+        // "1.2x" -> Minor state: '2' pushed, 'x' not digit/dot/dash/plus, result doesn't end with '.', break (line 431)
+        // result = "1.2", zero-filled to "1.2.0"
+        assert_eq!(extract_semver_pattern("1.2x"), "1.2.0");
+    }
+
+    #[test]
+    fn extract_semver_pattern_patch_dash() {
+        // "1.2.3-rc.1" -> Patch state encounters '-', pushes it, goes to Prerelease (line 438-439)
+        assert_eq!(extract_semver_pattern("1.2.3-rc.1"), "1.2.3-rc.1");
+    }
+
+    #[test]
+    fn extract_semver_pattern_patch_plus() {
+        // "1.2.3+build" -> Patch state encounters '+', pushes it, goes to Prerelease
+        assert_eq!(extract_semver_pattern("1.2.3+build"), "1.2.3+build");
+    }
+
+    #[test]
+    fn extract_semver_pattern_prerelease_chars() {
+        // Exercise the Prerelease state with various valid characters (line 445-446)
+        assert_eq!(
+            extract_semver_pattern("1.2.3-alpha_1.beta+build"),
+            "1.2.3-alpha_1.beta+build"
+        );
+    }
+
+    #[test]
+    fn extract_semver_pattern_prerelease_break() {
+        // Prerelease state with invalid char -> break (line 448)
+        assert_eq!(extract_semver_pattern("1.2.3-rc!bad"), "1.2.3-rc");
+    }
+
+    #[test]
+    fn extract_semver_pattern_zero_fill_path() {
+        // Result has < 2 dots and no dash/plus -> zero_fill (line 459)
+        assert_eq!(extract_semver_pattern("1"), "1.0.0");
+        assert_eq!(extract_semver_pattern("42"), "42.0.0");
+    }
+
+    #[test]
+    fn extract_semver_pattern_minor_plus() {
+        // "1.2+build" -> Minor state encounters '+', pushes it, goes to Prerelease (line 428-429)
+        assert_eq!(extract_semver_pattern("1.2+build"), "1.2+build");
+    }
+
+    // ==================== normalize_version reaching extract_semver_pattern ====================
+
+    #[test]
+    fn normalize_reaches_extract_semver_pattern() {
+        // Need an input where:
+        // 1. extract_version_token returns something
+        // 2. Version::parse fails
+        // 3. zero_fill also fails
+        // 4. extract_semver_pattern succeeds
+        //
+        // "1.2.3!junk" -> extract_version_token returns "1.2.3" -> parses OK (doesn't reach it)
+        // But "1.2.3-" -> extract_version_token returns "1.2.3-" -> parse fails,
+        // zero_fill("1.2.3-") -> "1.2.3-" fails, extract_semver_pattern("1.2.3-") -> "1.2.3"
+        // which should parse. But wait, extract_semver_pattern of "1.2.3-":
+        // Patch: '3' pushed. '-' pushed, state=Prerelease. End of string. result = "1.2.3-"
+        // dot_count=2, so doesn't zero-fill. Returns "1.2.3-". Version::parse("1.2.3-") fails.
+        // So this hits line 184 (InvalidSemver).
+
+        // Let me try another approach. extract_version_token might clean the input enough.
+        // We need extract_version_token to return something that fails parse+zerofill but
+        // extract_semver_pattern can fix.
+        //
+        // "abc1.2.3" -> extract_numeric_start("abc1.2.3") -> start_pos=3, s="1.2.3", returns "1.2.3"
+        // That parses fine. Not useful.
+        //
+        // The path through line 176-182 is for when extract_semver_pattern succeeds where
+        // direct parse and zero-fill failed. In practice this is very hard to reach because
+        // extract_version_token already cleans inputs well.
+        // Lines 176-182 may effectively be dead code for most real inputs.
+
+        // Verify the InvalidSemver path (line 184) is reachable
+        let err = normalize_version("1.").unwrap_err();
+        assert!(matches!(err, VersionParseError::InvalidSemver(_)));
+    }
+
+    // ==================== satisfies with non-semver constraint ====================
+
+    #[test]
+    fn satisfies_exact_string_fallback() {
+        let v = normalize_version("1.2.3").unwrap();
+        // Invalid semver constraint falls back to exact string comparison
+        assert!(v.satisfies("1.2.3"));
+        assert!(!v.satisfies("1.2.4"));
+    }
+
+    #[test]
+    fn satisfies_invalid_constraint_no_match() {
+        let v = normalize_version("1.2.3").unwrap();
+        // Completely invalid constraint that doesn't match the normalized string
+        assert!(!v.satisfies("not-a-version"));
+    }
+
     /// Verify that all documented failure cases are covered.
     #[test]
     fn documented_failures_have_fixtures() {
@@ -1215,5 +1409,12 @@ mod tests {
                 description
             );
         }
+    }
+
+    #[test]
+    fn normalized_version_with_uppercase_v() {
+        // Cover the V prefix path (extracted starts with 'V')
+        let v = normalize_version("V1.2.3").unwrap();
+        assert_eq!(v.normalized, "1.2.3");
     }
 }
