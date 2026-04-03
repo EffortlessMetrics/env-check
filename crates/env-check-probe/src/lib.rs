@@ -1314,4 +1314,123 @@ mod tests {
         );
         assert_eq!(result.exit, Some(0));
     }
+
+    #[test]
+    fn os_command_runner_empty_argv_returns_error() {
+        let runner = OsCommandRunner;
+        let result = runner.run(Path::new("."), &[], Duration::from_secs(10));
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("empty argv"), "got: {}", err);
+    }
+
+    #[test]
+    fn os_command_runner_timeout_returns_error() {
+        let runner = OsCommandRunner;
+        // Use `sleep 60` with a very short timeout to trigger the timeout branch
+        let result = runner.run(
+            Path::new("."),
+            &["sleep".to_string(), "60".to_string()],
+            Duration::from_millis(50),
+        );
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("timed out"),
+            "expected timeout error, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn os_command_runner_nonexistent_command_returns_error() {
+        let runner = OsCommandRunner;
+        let result = runner.run(
+            Path::new("."),
+            &["__nonexistent_command_xyz_42__".to_string()],
+            Duration::from_secs(5),
+        );
+        // spawn should fail, which hits the Err(e) branch on spawn or wait_timeout
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn os_path_resolver_resolves_cargo() {
+        let resolver = OsPathResolver;
+        // cargo should be available in the test environment
+        let result = resolver.resolve("cargo");
+        assert!(result.is_some(), "cargo should be resolvable on PATH");
+    }
+
+    #[test]
+    fn os_path_resolver_returns_none_for_nonexistent() {
+        let resolver = OsPathResolver;
+        let result = resolver.resolve("__nonexistent_tool_xyz_42__");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn fake_command_runner_default_trait() {
+        let runner = FakeCommandRunner::default();
+        // Should work identically to ::new()
+        let result = runner.run(
+            Path::new("."),
+            &["anything".to_string()],
+            Duration::from_secs(1),
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().exit, Some(127));
+    }
+
+    #[test]
+    fn fake_command_runner_empty_argv_returns_error() {
+        let runner = FakeCommandRunner::new();
+        let result = runner.run(Path::new("."), &[], Duration::from_secs(1));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("empty argv"));
+    }
+
+    #[test]
+    fn fake_hasher_with_hash_and_default() {
+        let hasher = FakeHasher::default();
+        // No hashes configured, so any lookup should fail
+        let result = hasher.sha256_hex(Path::new("/some/path"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("file not found"));
+
+        // Now test with_hash
+        let hasher = FakeHasher::new().with_hash("/some/path", "abcdef1234");
+        let result = hasher.sha256_hex(Path::new("/some/path"));
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "abcdef1234");
+    }
+
+    #[test]
+    fn fake_hasher_sha256_hex_missing_path() {
+        let hasher = FakeHasher::new().with_hash("/existing", "aaa");
+        let result = hasher.sha256_hex(Path::new("/missing"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("file not found"));
+    }
+
+    #[test]
+    fn file_log_writer_root_path_no_parent() {
+        // A path like "/" or a single component may exercise the parent branch differently
+        // Create a temp dir and use a file directly in it (parent exists)
+        let temp_dir = tempfile::tempdir().unwrap();
+        let log_path = temp_dir.path().join("test.log");
+        let writer = FileLogWriter::new(&log_path).expect("create log writer");
+        writer.write_line("hello");
+        writer.flush();
+        let content = std::fs::read_to_string(&log_path).unwrap();
+        assert!(content.contains("hello"));
+    }
+
+    #[test]
+    fn file_log_writer_empty_path_no_parent() {
+        // Path::new("").parent() returns None, exercising the else-branch of the if-let
+        let result = FileLogWriter::new(Path::new(""));
+        // This will fail at File::create, but the if-let None path is exercised first
+        assert!(result.is_err());
+    }
 }
