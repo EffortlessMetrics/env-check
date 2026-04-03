@@ -69,6 +69,16 @@ artifacts/env-check/extras/raw.log           # optional debug probe log
 artifacts/env-check/extras/annotations.txt   # optional GitHub workflow annotations
 ```
 
+## GitHub Actions
+
+```yaml
+- uses: EffortlessMetrics/env-check@v0.1.0
+  with:
+    profile: oss
+    root: .
+    md: artifacts/env-check/comment.md
+```
+
 ## CLI Quickstart
 
 ```bash

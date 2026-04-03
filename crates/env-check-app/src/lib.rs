@@ -291,7 +291,23 @@ fn compute_merge_base(root: &Path, base_ref: Option<&str>) -> Option<String> {
 }
 
 /// Detect git repository metadata by shelling out to git.
+///
+/// Best-effort: guard with rev-parse so non-repos return None immediately.
 fn detect_git(root: &Path) -> Option<GitMeta> {
+    fn git(root: &Path, args: &[&str]) -> Option<String> {
+        std::process::Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .filter(|s| !s.is_empty())
+    }
+
+    // Verify we are inside a git repository before doing anything else.
+    let _ = git(root, &["rev-parse", "--git-dir"])?;
+
     env_check_runtime::detect_git(root)
 }
 
@@ -556,6 +572,8 @@ mod tests {
                 "user.name=env-check",
                 "-c",
                 "user.email=env-check@example.com",
+                "-c",
+                "commit.gpgsign=false",
                 "commit",
                 "--allow-empty",
                 "-m",
@@ -608,6 +626,8 @@ mod tests {
                 "user.name=env-check",
                 "-c",
                 "user.email=env-check@example.com",
+                "-c",
+                "commit.gpgsign=false",
                 "commit",
                 "--allow-empty",
                 "-m",
