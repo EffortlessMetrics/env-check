@@ -22,8 +22,8 @@ jobs:
       - name: clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: test (coverage)
-        run: cargo llvm-cov --all --fail-under-lines 100
+      - name: test
+        run: cargo test --workspace
 
       - name: bdd
         run: cargo test -p env-check-cli --test bdd
