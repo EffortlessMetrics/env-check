@@ -10,6 +10,8 @@ It is deliberately not a build runner, not a policy repair tool, and not a repo 
 
 ## Core Contract
 
+Codecov is Rust execution-surface telemetry only; see [Coverage](docs/ci/coverage.md) for what the badge does and does not claim.
+
 - Canonical artifact is always `artifacts/env-check/report.json`.
 - Optional artifacts are `artifacts/env-check/comment.md` and `artifacts/env-check/extras/*`.
 - Receipt envelope schema is `sensor.report.v1`.
