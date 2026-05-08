@@ -158,3 +158,157 @@ fn rel(root: &Path, path: &Path) -> String {
         .to_string_lossy()
         .replace('\\', "/")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn root() -> PathBuf {
+        PathBuf::from("/repo")
+    }
+
+    fn path() -> PathBuf {
+        PathBuf::from("/repo/go.mod")
+    }
+
+    #[test]
+    fn parse_basic_go_mod() {
+        let text = "module example.com/foo\n\ngo 1.22\n";
+        let reqs = parse_go_mod_str(&root(), &path(), text).unwrap();
+        assert_eq!(reqs.len(), 1);
+        assert_eq!(reqs[0].tool, "go");
+        assert_eq!(reqs[0].constraint.as_deref(), Some(">=1.22"));
+    }
+
+    #[test]
+    fn parse_go_mod_with_comment() {
+        let text = "module example.com/foo\n\n// a comment\ngo 1.22 // inline\n";
+        let reqs = parse_go_mod_str(&root(), &path(), text).unwrap();
+        assert_eq!(reqs[0].constraint.as_deref(), Some(">=1.22"));
+    }
+
+    #[test]
+    fn parse_go_mod_with_toolchain() {
+        let text = "module example.com/foo\n\ngo 1.22\ntoolchain go1.22.5\n";
+        let reqs = parse_go_mod_str(&root(), &path(), text).unwrap();
+        assert_eq!(reqs[0].constraint.as_deref(), Some(">=1.22.5"));
+    }
+
+    #[test]
+    fn parse_go_mod_toolchain_default_ignored() {
+        let text = "module example.com/foo\n\ngo 1.22\ntoolchain default\n";
+        let reqs = parse_go_mod_str(&root(), &path(), text).unwrap();
+        assert_eq!(reqs[0].constraint.as_deref(), Some(">=1.22"));
+    }
+
+    #[test]
+    fn parse_go_mod_empty_go_directive() {
+        let text = "module example.com/foo\n\ngo\n";
+        let err = parse_go_mod_str(&root(), &path(), text).unwrap_err();
+        assert!(err.to_string().contains("no version"));
+    }
+
+    #[test]
+    fn parse_go_mod_invalid_version() {
+        let text = "module example.com/foo\n\ngo abc\n";
+        let err = parse_go_mod_str(&root(), &path(), text).unwrap_err();
+        assert!(err.to_string().contains("invalid go version"));
+    }
+
+    #[test]
+    fn parse_go_mod_missing_go_directive() {
+        let text = "module example.com/foo\n";
+        let err = parse_go_mod_str(&root(), &path(), text).unwrap_err();
+        assert!(err.to_string().contains("missing go directive"));
+    }
+
+    #[test]
+    fn parse_go_mod_tab_separator() {
+        let text = "module example.com/foo\n\ngo\t1.22\n";
+        let reqs = parse_go_mod_str(&root(), &path(), text).unwrap();
+        assert_eq!(reqs[0].constraint.as_deref(), Some(">=1.22"));
+    }
+
+    #[test]
+    fn parse_go_mod_empty_toolchain_directive() {
+        let text = "module example.com/foo\n\ngo 1.22\ntoolchain\n";
+        let err = parse_go_mod_str(&root(), &path(), text).unwrap_err();
+        assert!(err.to_string().contains("toolchain directive has no value"));
+    }
+
+    #[test]
+    fn parse_go_mod_invalid_toolchain_version() {
+        let text = "module example.com/foo\n\ngo 1.22\ntoolchain goabc\n";
+        let err = parse_go_mod_str(&root(), &path(), text).unwrap_err();
+        assert!(err.to_string().contains("invalid toolchain version"));
+    }
+
+    #[test]
+    fn parse_go_mod_toolchain_tab_separator() {
+        let text = "module example.com/foo\n\ngo 1.22\ntoolchain\tgo1.22.5\n";
+        let reqs = parse_go_mod_str(&root(), &path(), text).unwrap();
+        assert_eq!(reqs[0].constraint.as_deref(), Some(">=1.22.5"));
+    }
+
+    #[test]
+    fn parse_go_mod_toolchain_lower_than_go_uses_go() {
+        let text = "module example.com/foo\n\ngo 1.23\ntoolchain go1.22.0\n";
+        let reqs = parse_go_mod_str(&root(), &path(), text).unwrap();
+        // go directive is stricter
+        assert_eq!(reqs[0].constraint.as_deref(), Some(">=1.23"));
+    }
+
+    #[test]
+    fn parse_go_mod_three_part_version() {
+        let text = "module example.com/foo\n\ngo 1.22.1\n";
+        let reqs = parse_go_mod_str(&root(), &path(), text).unwrap();
+        assert_eq!(reqs[0].constraint.as_deref(), Some(">=1.22.1"));
+    }
+
+    #[test]
+    fn parse_go_mod_skips_blank_and_comment_lines() {
+        let text = "\n// comment\n\nmodule example.com/foo\n\ngo 1.22\n";
+        let reqs = parse_go_mod_str(&root(), &path(), text).unwrap();
+        assert_eq!(reqs.len(), 1);
+    }
+
+    #[test]
+    fn parse_go_mod_duplicate_go_directive_uses_first() {
+        let text = "module example.com/foo\n\ngo 1.22\ngo 1.23\n";
+        let reqs = parse_go_mod_str(&root(), &path(), text).unwrap();
+        assert_eq!(reqs[0].constraint.as_deref(), Some(">=1.22"));
+    }
+
+    #[test]
+    fn parse_go_mod_toolchain_with_comment() {
+        let text = "module example.com/foo\n\ngo 1.22\ntoolchain go1.22.5 // inline\n";
+        let reqs = parse_go_mod_str(&root(), &path(), text).unwrap();
+        assert_eq!(reqs[0].constraint.as_deref(), Some(">=1.22.5"));
+    }
+
+    #[test]
+    fn is_valid_go_version_rejects_single_part() {
+        assert!(!is_valid_go_version("1"));
+    }
+
+    #[test]
+    fn is_valid_go_version_rejects_four_parts() {
+        assert!(!is_valid_go_version("1.2.3.4"));
+    }
+
+    #[test]
+    fn is_valid_go_version_rejects_non_numeric() {
+        assert!(!is_valid_go_version("1.x"));
+    }
+
+    #[test]
+    fn is_valid_go_version_accepts_two_parts() {
+        assert!(is_valid_go_version("1.22"));
+    }
+
+    #[test]
+    fn is_valid_go_version_accepts_three_parts() {
+        assert!(is_valid_go_version("1.22.1"));
+    }
+}

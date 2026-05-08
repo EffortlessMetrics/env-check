@@ -599,4 +599,429 @@ mod tests {
         assert_eq!(graph.edges[0].from, "pipx");
         assert_eq!(graph.edges[0].to, "python");
     }
+
+    // --- Additional tests for full coverage ---
+
+    #[test]
+    fn source_kind_id_all_variants() {
+        assert_eq!(source_kind_id(&SourceKind::MiseToml), "mise");
+        assert_eq!(source_kind_id(&SourceKind::RustToolchain), "rust-toolchain");
+        assert_eq!(source_kind_id(&SourceKind::HashManifest), "hash-manifest");
+        assert_eq!(source_kind_id(&SourceKind::NodeVersion), "node-version");
+        assert_eq!(source_kind_id(&SourceKind::Nvmrc), "nvmrc");
+        assert_eq!(source_kind_id(&SourceKind::PackageJson), "package-json");
+        assert_eq!(source_kind_id(&SourceKind::PythonVersion), "python-version");
+        assert_eq!(source_kind_id(&SourceKind::PyprojectToml), "pyproject");
+    }
+
+    #[test]
+    fn probe_kind_id_rustup() {
+        assert_eq!(probe_kind_id(&ProbeKind::RustupToolchain), "rustup");
+    }
+
+    #[test]
+    fn probe_kinds_deduped_and_sorted() {
+        let requirements = vec![
+            req("node", Some(">=20"), ProbeKind::PathTool),
+            req("rust", Some("stable"), ProbeKind::RustupToolchain),
+            req("go", Some(">=1.21"), ProbeKind::PathTool),
+        ];
+        let kinds = probe_kinds(&requirements);
+        assert_eq!(kinds, vec!["path", "rustup"]);
+    }
+
+    #[test]
+    fn summarize_probes_missing_observation() {
+        let requirements = vec![
+            req("node", Some(">=20"), ProbeKind::PathTool),
+            req("python", Some(">=3.12"), ProbeKind::PathTool),
+        ];
+        // Only one observation for two requirements
+        let observations = vec![obs("node", true, Some("20.11.0"), "v20.11.0", Some(0), "")];
+
+        let probes = summarize_probes(&requirements, &observations);
+        let missing: Vec<_> = probes
+            .iter()
+            .filter(|p| p.result == ProbeResult::Skipped && p.raw == "observation missing")
+            .collect();
+        assert_eq!(missing.len(), 1);
+        assert_eq!(missing[0].tool, "python");
+        assert!(missing[0].cmd.is_empty());
+    }
+
+    #[test]
+    fn dependency_graph_skips_empty_tool_name() {
+        let requirements = vec![
+            req("node", Some(">=20"), ProbeKind::PathTool),
+            req("", None, ProbeKind::PathTool), // empty tool name
+            req("  ", None, ProbeKind::PathTool), // whitespace-only tool name
+        ];
+        let graph = dependency_graph(&requirements);
+        // Empty tool is skipped, whitespace-only is not (trim check is `is_empty` after trim)
+        assert!(graph.nodes.contains(&"node".to_string()));
+        assert!(!graph.nodes.contains(&"".to_string()));
+    }
+
+    #[test]
+    fn classify_path_probe_no_constraint_returns_ok() {
+        let r = req("node", None, ProbeKind::PathTool);
+        let o = obs("node", true, Some("20.11.0"), "v20.11.0", Some(0), "");
+        let result = classify_probe(&r, &o);
+        assert_eq!(result, ProbeResult::Ok);
+    }
+
+    #[test]
+    fn classify_path_probe_no_version_falls_through_to_probe_record() {
+        let r = req("node", Some(">=20"), ProbeKind::PathTool);
+        // present but no version observation, stderr has content -> Error
+        let o = Observation {
+            tool: "node".into(),
+            present: true,
+            version: None,
+            hash_ok: None,
+            probe: ProbeRecord {
+                cmd: vec!["node".into(), "--version".into()],
+                exit: Some(1),
+                stdout: String::new(),
+                stderr: "some error".into(),
+            },
+        };
+        let result = classify_probe(&r, &o);
+        assert_eq!(result, ProbeResult::Error);
+    }
+
+    #[test]
+    fn classify_path_probe_version_no_parsed_returns_mismatch() {
+        let r = req("node", Some(">=20"), ProbeKind::PathTool);
+        // version present but parsed is None
+        let o = Observation {
+            tool: "node".into(),
+            present: true,
+            version: Some(VersionObservation {
+                parsed: None,
+                raw: "unknown version format".into(),
+            }),
+            hash_ok: None,
+            probe: ProbeRecord {
+                cmd: vec!["node".into(), "--version".into()],
+                exit: Some(0),
+                stdout: "unknown version format".into(),
+                stderr: String::new(),
+            },
+        };
+        let result = classify_probe(&r, &o);
+        assert_eq!(result, ProbeResult::VersionMismatch);
+    }
+
+    #[test]
+    fn classify_rustup_probe_not_present() {
+        let r = req("rust", Some("stable"), ProbeKind::RustupToolchain);
+        let o = Observation {
+            tool: "rust".into(),
+            present: false,
+            version: None,
+            hash_ok: None,
+            probe: ProbeRecord {
+                cmd: vec!["rustup".into(), "show".into()],
+                exit: None,
+                stdout: String::new(),
+                stderr: String::new(),
+            },
+        };
+        let result = classify_probe(&r, &o);
+        assert_eq!(result, ProbeResult::NotFound);
+    }
+
+    #[test]
+    fn classify_rustup_probe_no_constraint_returns_ok() {
+        let r = req("rust", None, ProbeKind::RustupToolchain);
+        let o = Observation {
+            tool: "rust".into(),
+            present: true,
+            version: Some(VersionObservation {
+                parsed: None,
+                raw: "stable-x86_64-unknown-linux-gnu".into(),
+            }),
+            hash_ok: None,
+            probe: ProbeRecord {
+                cmd: vec!["rustup".into(), "show".into()],
+                exit: Some(0),
+                stdout: "stable-x86_64-unknown-linux-gnu".into(),
+                stderr: String::new(),
+            },
+        };
+        let result = classify_probe(&r, &o);
+        assert_eq!(result, ProbeResult::Ok);
+    }
+
+    #[test]
+    fn classify_rustup_probe_version_match() {
+        let r = req("rust", Some("stable"), ProbeKind::RustupToolchain);
+        let o = Observation {
+            tool: "rust".into(),
+            present: true,
+            version: Some(VersionObservation {
+                parsed: None,
+                raw: "stable-x86_64-unknown-linux-gnu".into(),
+            }),
+            hash_ok: None,
+            probe: ProbeRecord {
+                cmd: vec!["rustup".into(), "show".into()],
+                exit: Some(0),
+                stdout: "stable-x86_64-unknown-linux-gnu".into(),
+                stderr: String::new(),
+            },
+        };
+        let result = classify_probe(&r, &o);
+        assert_eq!(result, ProbeResult::Ok);
+    }
+
+    #[test]
+    fn classify_rustup_probe_version_mismatch() {
+        let r = req("rust", Some("nightly"), ProbeKind::RustupToolchain);
+        let o = Observation {
+            tool: "rust".into(),
+            present: true,
+            version: Some(VersionObservation {
+                parsed: None,
+                raw: "stable-x86_64-unknown-linux-gnu".into(),
+            }),
+            hash_ok: None,
+            probe: ProbeRecord {
+                cmd: vec!["rustup".into(), "show".into()],
+                exit: Some(0),
+                stdout: "stable-x86_64-unknown-linux-gnu".into(),
+                stderr: String::new(),
+            },
+        };
+        let result = classify_probe(&r, &o);
+        assert_eq!(result, ProbeResult::VersionMismatch);
+    }
+
+    #[test]
+    fn classify_rustup_probe_no_version_obs() {
+        let r = req("rust", Some("stable"), ProbeKind::RustupToolchain);
+        let o = Observation {
+            tool: "rust".into(),
+            present: true,
+            version: None,
+            hash_ok: None,
+            probe: ProbeRecord {
+                cmd: vec!["rustup".into(), "show".into()],
+                exit: Some(0),
+                stdout: String::new(),
+                stderr: String::new(),
+            },
+        };
+        let result = classify_probe(&r, &o);
+        // unwrap_or_default gives "", which doesn't contain "stable"
+        assert_eq!(result, ProbeResult::VersionMismatch);
+    }
+
+    #[test]
+    fn classify_hash_probe_not_present() {
+        let r = req("file:tool.sh", None, ProbeKind::FileHash);
+        let o = Observation {
+            tool: "file:tool.sh".into(),
+            present: false,
+            version: None,
+            hash_ok: None,
+            probe: ProbeRecord {
+                cmd: vec![],
+                exit: None,
+                stdout: String::new(),
+                stderr: String::new(),
+            },
+        };
+        let result = classify_probe(&r, &o);
+        assert_eq!(result, ProbeResult::NotFound);
+    }
+
+    #[test]
+    fn classify_hash_probe_ok() {
+        let r = req("file:tool.sh", None, ProbeKind::FileHash);
+        let o = Observation {
+            tool: "file:tool.sh".into(),
+            present: true,
+            version: None,
+            hash_ok: Some(true),
+            probe: ProbeRecord {
+                cmd: vec![],
+                exit: Some(0),
+                stdout: "hash ok".into(),
+                stderr: String::new(),
+            },
+        };
+        let result = classify_probe(&r, &o);
+        assert_eq!(result, ProbeResult::Ok);
+    }
+
+    #[test]
+    fn classify_hash_probe_none_falls_through() {
+        let r = req("file:tool.sh", None, ProbeKind::FileHash);
+        // hash_ok is None, stderr is empty, exit is Some(0) => Skipped via classify_from_probe_record
+        let o = Observation {
+            tool: "file:tool.sh".into(),
+            present: true,
+            version: None,
+            hash_ok: None,
+            probe: ProbeRecord {
+                cmd: vec![],
+                exit: Some(0),
+                stdout: String::new(),
+                stderr: String::new(),
+            },
+        };
+        let result = classify_probe(&r, &o);
+        assert_eq!(result, ProbeResult::Skipped);
+    }
+
+    #[test]
+    fn classify_from_probe_record_stderr_error() {
+        let o = Observation {
+            tool: "test".into(),
+            present: true,
+            version: None,
+            hash_ok: None,
+            probe: ProbeRecord {
+                cmd: vec!["test".into()],
+                exit: Some(0),
+                stdout: String::new(),
+                stderr: "something went wrong".into(),
+            },
+        };
+        assert_eq!(classify_from_probe_record(&o), ProbeResult::Error);
+    }
+
+    #[test]
+    fn classify_from_probe_record_exit_zero() {
+        let o = Observation {
+            tool: "test".into(),
+            present: true,
+            version: None,
+            hash_ok: None,
+            probe: ProbeRecord {
+                cmd: vec!["test".into()],
+                exit: Some(0),
+                stdout: String::new(),
+                stderr: String::new(),
+            },
+        };
+        assert_eq!(classify_from_probe_record(&o), ProbeResult::Skipped);
+    }
+
+    #[test]
+    fn classify_from_probe_record_exit_nonzero() {
+        let o = Observation {
+            tool: "test".into(),
+            present: true,
+            version: None,
+            hash_ok: None,
+            probe: ProbeRecord {
+                cmd: vec!["test".into()],
+                exit: Some(1),
+                stdout: String::new(),
+                stderr: String::new(),
+            },
+        };
+        assert_eq!(classify_from_probe_record(&o), ProbeResult::Error);
+    }
+
+    #[test]
+    fn classify_from_probe_record_exit_none() {
+        let o = Observation {
+            tool: "test".into(),
+            present: true,
+            version: None,
+            hash_ok: None,
+            probe: ProbeRecord {
+                cmd: vec!["test".into()],
+                exit: None,
+                stdout: String::new(),
+                stderr: String::new(),
+            },
+        };
+        assert_eq!(classify_from_probe_record(&o), ProbeResult::Skipped);
+    }
+
+    #[test]
+    fn coerce_version_empty_returns_none() {
+        assert!(coerce_version("").is_none());
+        assert!(coerce_version("  ").is_none());
+    }
+
+    #[test]
+    fn coerce_version_one_part() {
+        let v = coerce_version("20").unwrap();
+        assert_eq!(v, Version::new(20, 0, 0));
+    }
+
+    #[test]
+    fn coerce_version_two_parts() {
+        let v = coerce_version("20.11").unwrap();
+        assert_eq!(v, Version::new(20, 11, 0));
+    }
+
+    #[test]
+    fn coerce_version_three_parts() {
+        let v = coerce_version("20.11.3").unwrap();
+        assert_eq!(v, Version::new(20, 11, 3));
+    }
+
+    #[test]
+    fn satisfies_semverish_fallback_string_comparison() {
+        // When semver parsing fails, falls back to string comparison
+        assert!(satisfies_semverish("not-semver", "not-semver"));
+        assert!(!satisfies_semverish("not-semver", "other"));
+    }
+
+    #[test]
+    fn satisfies_semverish_semver_req_fails_to_parse() {
+        // valid version but invalid constraint -> fallback to string comparison
+        assert!(satisfies_semverish("abc", "abc"));
+        assert!(!satisfies_semverish("abc", "def"));
+    }
+
+    #[test]
+    fn result_rank_skipped() {
+        assert_eq!(result_rank(&ProbeResult::Skipped), 6);
+    }
+
+    #[test]
+    fn classify_path_probe_no_version_empty_stderr_exit_zero() {
+        // present, has constraint, not presence-only, no version -> classify_from_probe_record
+        // empty stderr, exit Some(0) -> Skipped
+        let r = req("node", Some(">=20"), ProbeKind::PathTool);
+        let o = Observation {
+            tool: "node".into(),
+            present: true,
+            version: None,
+            hash_ok: None,
+            probe: ProbeRecord {
+                cmd: vec!["node".into(), "--version".into()],
+                exit: Some(0),
+                stdout: String::new(),
+                stderr: String::new(),
+            },
+        };
+        let result = classify_probe(&r, &o);
+        assert_eq!(result, ProbeResult::Skipped);
+    }
+
+    #[test]
+    fn classify_path_probe_presence_only_ok() {
+        // constraint is "latest" -> presence-only -> Ok
+        let r = req("node", Some("latest"), ProbeKind::PathTool);
+        let o = obs("node", true, Some("20.0.0"), "v20.0.0", Some(0), "");
+        assert_eq!(classify_probe(&r, &o), ProbeResult::Ok);
+
+        let r2 = req("node", Some("system"), ProbeKind::PathTool);
+        assert_eq!(classify_probe(&r2, &o), ProbeResult::Ok);
+
+        let r3 = req("node", Some("*"), ProbeKind::PathTool);
+        assert_eq!(classify_probe(&r3, &o), ProbeResult::Ok);
+
+        let r4 = req("node", Some("default"), ProbeKind::PathTool);
+        assert_eq!(classify_probe(&r4, &o), ProbeResult::Ok);
+    }
 }

@@ -86,3 +86,54 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
         .with_context(|| format!("rename {} -> {}", tmp.display(), path.display()))?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn write_atomic_creates_file() {
+        let dir = std::env::temp_dir().join(format!(
+            "env-check-runtime-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let path = dir.join("output.json");
+        write_atomic(&path, b"hello world").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "hello world");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_atomic_creates_parent_dirs() {
+        let dir = std::env::temp_dir().join(format!(
+            "env-check-runtime-test-nested-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let path = dir.join("sub").join("deep").join("output.json");
+        write_atomic(&path, b"nested").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "nested");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_atomic_overwrites_existing() {
+        let dir = std::env::temp_dir().join(format!(
+            "env-check-runtime-test-overwrite-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let path = dir.join("output.json");
+        write_atomic(&path, b"first").unwrap();
+        write_atomic(&path, b"second").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "second");
+        let _ = fs::remove_dir_all(&dir);
+    }
+}

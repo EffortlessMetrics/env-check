@@ -198,3 +198,63 @@ fn rel(root: &Path, path: &Path) -> String {
         .to_string_lossy()
         .replace('\\', "/")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn root() -> PathBuf {
+        PathBuf::from("/repo")
+    }
+
+    // ==================== .node-version ====================
+
+    #[test]
+    fn parse_node_version_str_basic() {
+        let path = PathBuf::from("/repo/.node-version");
+        let reqs = parse_node_version_str(&root(), &path, "20.11.0\n").unwrap();
+        assert_eq!(reqs.len(), 1);
+        assert_eq!(reqs[0].tool, "node");
+        assert_eq!(reqs[0].constraint.as_deref(), Some("20.11.0"));
+    }
+
+    #[test]
+    fn parse_node_version_str_with_v_prefix() {
+        let path = PathBuf::from("/repo/.node-version");
+        let reqs = parse_node_version_str(&root(), &path, "v20.11.0\n").unwrap();
+        assert_eq!(reqs[0].constraint.as_deref(), Some("20.11.0"));
+    }
+
+    #[test]
+    fn parse_node_version_str_empty() {
+        let path = PathBuf::from("/repo/.node-version");
+        let reqs = parse_node_version_str(&root(), &path, "\n\n").unwrap();
+        assert!(reqs.is_empty());
+    }
+
+    #[test]
+    fn parse_node_version_str_comments_only() {
+        let path = PathBuf::from("/repo/.node-version");
+        let reqs = parse_node_version_str(&root(), &path, "# comment\n").unwrap();
+        assert!(reqs.is_empty());
+    }
+
+    // ==================== .nvmrc ====================
+
+    #[test]
+    fn parse_nvmrc_str_basic() {
+        let path = PathBuf::from("/repo/.nvmrc");
+        let reqs = parse_nvmrc_str(&root(), &path, "18.17.0\n").unwrap();
+        assert_eq!(reqs.len(), 1);
+        assert_eq!(reqs[0].tool, "node");
+        assert_eq!(reqs[0].constraint.as_deref(), Some("18.17.0"));
+    }
+
+    #[test]
+    fn parse_nvmrc_str_empty() {
+        let path = PathBuf::from("/repo/.nvmrc");
+        let reqs = parse_nvmrc_str(&root(), &path, "\n").unwrap();
+        assert!(reqs.is_empty());
+    }
+}

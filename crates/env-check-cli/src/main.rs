@@ -502,4 +502,23 @@ mod tests {
         assert!(entries.iter().any(|e| e.id == "tool.runtime_error"));
         assert!(entries.iter().any(|e| e.id == "tool.runtime"));
     }
+
+    #[test]
+    fn maybe_add_artifact_returns_early_when_file_does_not_exist() {
+        let mut receipt = env_check_app::runtime_error_receipt("test");
+        let receipt_path = Path::new("/tmp/nonexistent-dir/report.json");
+        let artifact_path = Path::new("/tmp/nonexistent-dir/extras/artifact.txt");
+        maybe_add_artifact(
+            &mut receipt,
+            receipt_path,
+            artifact_path,
+            "test_kind",
+            "test description",
+        );
+        // No artifact should have been added because the file does not exist
+        assert!(
+            receipt.artifacts.is_empty(),
+            "no artifact should be added for a nonexistent file"
+        );
+    }
 }

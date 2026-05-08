@@ -291,7 +291,23 @@ fn compute_merge_base(root: &Path, base_ref: Option<&str>) -> Option<String> {
 }
 
 /// Detect git repository metadata by shelling out to git.
+///
+/// Best-effort: guard with rev-parse so non-repos return None immediately.
 fn detect_git(root: &Path) -> Option<GitMeta> {
+    fn git(root: &Path, args: &[&str]) -> Option<String> {
+        std::process::Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .filter(|s| !s.is_empty())
+    }
+
+    // Verify we are inside a git repository before doing anything else.
+    let _ = git(root, &["rev-parse", "--git-dir"])?;
+
     env_check_runtime::detect_git(root)
 }
 
@@ -556,6 +572,8 @@ mod tests {
                 "user.name=env-check",
                 "-c",
                 "user.email=env-check@example.com",
+                "-c",
+                "commit.gpgsign=false",
                 "commit",
                 "--allow-empty",
                 "-m",
@@ -608,6 +626,8 @@ mod tests {
                 "user.name=env-check",
                 "-c",
                 "user.email=env-check@example.com",
+                "-c",
+                "commit.gpgsign=false",
                 "commit",
                 "--allow-empty",
                 "-m",
@@ -1313,5 +1333,25 @@ disabled = ["python"]
         assert_eq!(ci.provider, "unknown");
         assert!(ci.job.is_none());
         assert!(ci.run_id.is_none());
+    }
+
+    #[test]
+    fn check_options_default_has_expected_values() {
+        let opts = CheckOptions::default();
+        assert!(opts.debug_log_path.is_none());
+        assert_eq!(opts.probe_timeout_secs, DEFAULT_PROBE_TIMEOUT_SECS);
+    }
+
+    #[test]
+    fn run_check_wrapper_works_on_empty_dir() {
+        let root = temp_root_dir("run-check-wrapper");
+        // run_check is the backwards-compat wrapper around run_check_with_options
+        let result = run_check(&root, None, Profile::Oss, FailOn::Error);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        // Empty dir should skip (no sources)
+        assert_eq!(output.receipt.verdict.status, VerdictStatus::Skip);
+        assert_eq!(output.exit_code, 0);
+        let _ = fs::remove_dir_all(&root);
     }
 }

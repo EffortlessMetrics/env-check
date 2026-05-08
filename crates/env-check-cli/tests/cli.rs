@@ -1654,3 +1654,141 @@ fn annotations_file_is_written_and_referenced_when_relative() {
         "receipt should include github_annotations artifact"
     );
 }
+
+// =============================================================================
+// COMPLETIONS COMMAND TESTS
+// =============================================================================
+
+#[test]
+fn completions_bash() {
+    let mut cmd = env_check_cmd();
+    cmd.arg("completions").arg("bash");
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("env-check"));
+}
+
+#[test]
+fn completions_zsh() {
+    let mut cmd = env_check_cmd();
+    cmd.arg("completions").arg("zsh");
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("env-check"));
+}
+
+#[test]
+fn completions_fish() {
+    let mut cmd = env_check_cmd();
+    cmd.arg("completions").arg("fish");
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("env-check"));
+}
+
+#[test]
+fn completions_powershell() {
+    let mut cmd = env_check_cmd();
+    cmd.arg("completions").arg("powershell");
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("env-check"));
+}
+
+#[test]
+fn completions_invalid_shell_exits_one() {
+    let mut cmd = env_check_cmd();
+    cmd.arg("completions").arg("invalid-shell");
+    cmd.assert()
+        .code(1)
+        .stderr(predicate::str::contains("invalid shell"));
+}
+
+// =============================================================================
+// RUNTIME ERROR PATH WITH ANNOTATIONS AND MARKDOWN
+// =============================================================================
+
+#[test]
+fn runtime_error_writes_annotations_when_requested() {
+    let tmp = tempdir().unwrap();
+    let out_path = tmp
+        .path()
+        .join("artifacts")
+        .join("env-check")
+        .join("report.json");
+    let annotations_path = tmp
+        .path()
+        .join("artifacts")
+        .join("env-check")
+        .join("extras")
+        .join("annotations.txt");
+    let bad_config = tmp.path().join("bad.toml");
+
+    fs::write(&bad_config, "not = [toml").unwrap();
+
+    let mut cmd = env_check_cmd();
+    cmd.arg("check")
+        .arg("--root")
+        .arg(fixtures_dir().join("no_sources"))
+        .arg("--config")
+        .arg(&bad_config)
+        .arg("--out")
+        .arg(&out_path)
+        .arg("--annotations")
+        .arg(&annotations_path);
+
+    cmd.assert().code(1);
+
+    // Annotations file should exist
+    assert!(
+        annotations_path.exists(),
+        "annotations file should be written on runtime error"
+    );
+
+    // Receipt should reference annotations artifact
+    let content = fs::read_to_string(&out_path).unwrap();
+    let json: Value = serde_json::from_str(&content).unwrap();
+    let artifacts = json["artifacts"]
+        .as_array()
+        .expect("artifacts should be an array");
+    assert!(
+        artifacts
+            .iter()
+            .any(|a| a["kind"].as_str() == Some("github_annotations")),
+        "receipt should include github_annotations artifact on runtime error"
+    );
+}
+
+#[test]
+fn runtime_error_writes_markdown_when_requested() {
+    let tmp = tempdir().unwrap();
+    let out_path = tmp.path().join("report.json");
+    let md_path = tmp.path().join("comment.md");
+    let bad_config = tmp.path().join("bad.toml");
+
+    fs::write(&bad_config, "not = [toml").unwrap();
+
+    let mut cmd = env_check_cmd();
+    cmd.arg("check")
+        .arg("--root")
+        .arg(fixtures_dir().join("no_sources"))
+        .arg("--config")
+        .arg(&bad_config)
+        .arg("--out")
+        .arg(&out_path)
+        .arg("--md")
+        .arg(&md_path);
+
+    cmd.assert().code(1);
+
+    // Markdown file should exist
+    assert!(
+        md_path.exists(),
+        "markdown file should be written on runtime error"
+    );
+    let md_content = fs::read_to_string(&md_path).unwrap();
+    assert!(
+        md_content.contains("## env-check:"),
+        "markdown should contain env-check header on runtime error"
+    );
+}

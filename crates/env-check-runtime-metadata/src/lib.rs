@@ -239,3 +239,144 @@ pub fn detect_git(root: &Path) -> Option<GitMeta> {
         pr_number: gh_event.pr_number,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn env_from_map<'a>(
+        map: &'a HashMap<&'a str, &'a str>,
+    ) -> impl Fn(&str) -> Option<String> + 'a {
+        move |key| map.get(key).map(|v| v.to_string())
+    }
+
+    #[test]
+    fn detect_host_returns_some() {
+        let host = detect_host().expect("host metadata should be present");
+        assert!(!host.os.is_empty());
+        assert!(!host.arch.is_empty());
+    }
+
+    #[test]
+    fn detect_ci_github_actions() {
+        let mut env = HashMap::new();
+        env.insert("GITHUB_ACTIONS", "true");
+        env.insert("GITHUB_JOB", "build");
+        env.insert("GITHUB_RUN_ID", "12345");
+        env.insert("GITHUB_WORKFLOW", "CI");
+        env.insert("GITHUB_REPOSITORY", "org/repo");
+        env.insert("GITHUB_REF", "refs/heads/main");
+        env.insert("GITHUB_SHA", "abc123");
+
+        let ci = detect_ci_from_env(env_from_map(&env)).expect("should detect github");
+        assert_eq!(ci.provider, "github");
+        assert_eq!(ci.job.as_deref(), Some("build"));
+        assert_eq!(ci.run_id.as_deref(), Some("12345"));
+        assert_eq!(ci.workflow.as_deref(), Some("CI"));
+        assert_eq!(ci.repository.as_deref(), Some("org/repo"));
+    }
+
+    #[test]
+    fn detect_ci_gitlab() {
+        let mut env = HashMap::new();
+        env.insert("GITLAB_CI", "true");
+        env.insert("CI_JOB_NAME", "test");
+        env.insert("CI_JOB_ID", "999");
+        env.insert("CI_PIPELINE_NAME", "pipeline");
+        env.insert("CI_PROJECT_PATH", "group/project");
+        env.insert("CI_COMMIT_REF_NAME", "main");
+        env.insert("CI_COMMIT_SHA", "def456");
+
+        let ci = detect_ci_from_env(env_from_map(&env)).expect("should detect gitlab");
+        assert_eq!(ci.provider, "gitlab");
+        assert_eq!(ci.job.as_deref(), Some("test"));
+    }
+
+    #[test]
+    fn detect_ci_circleci() {
+        let mut env = HashMap::new();
+        env.insert("CIRCLECI", "true");
+        env.insert("CIRCLE_JOB", "build");
+        env.insert("CIRCLE_BUILD_NUM", "42");
+        env.insert("CIRCLE_WORKFLOW_ID", "wf-1");
+        env.insert("CIRCLE_PROJECT_REPONAME", "myrepo");
+        env.insert("CIRCLE_BRANCH", "feature");
+        env.insert("CIRCLE_SHA1", "sha1val");
+
+        let ci = detect_ci_from_env(env_from_map(&env)).expect("should detect circleci");
+        assert_eq!(ci.provider, "circleci");
+        assert_eq!(ci.run_id.as_deref(), Some("42"));
+    }
+
+    #[test]
+    fn detect_ci_azure() {
+        let mut env = HashMap::new();
+        env.insert("TF_BUILD", "True");
+        env.insert("SYSTEM_JOBDISPLAYNAME", "Build");
+        env.insert("BUILD_BUILDID", "100");
+        env.insert("BUILD_DEFINITIONNAME", "CI Pipeline");
+        env.insert("BUILD_REPOSITORY_NAME", "myrepo");
+        env.insert("BUILD_SOURCEBRANCH", "refs/heads/main");
+        env.insert("BUILD_SOURCEVERSION", "aaa111");
+
+        let ci = detect_ci_from_env(env_from_map(&env)).expect("should detect azure");
+        assert_eq!(ci.provider, "azure");
+        assert_eq!(ci.job.as_deref(), Some("Build"));
+    }
+
+    #[test]
+    fn detect_ci_generic() {
+        let mut env = HashMap::new();
+        env.insert("CI", "true");
+
+        let ci = detect_ci_from_env(env_from_map(&env)).expect("should detect generic ci");
+        assert_eq!(ci.provider, "unknown");
+        assert!(ci.job.is_none());
+    }
+
+    #[test]
+    fn detect_ci_none() {
+        let env: HashMap<&str, &str> = HashMap::new();
+        assert!(detect_ci_from_env(env_from_map(&env)).is_none());
+    }
+
+    #[test]
+    fn detect_ci_github_filters_empty_strings() {
+        let mut env = HashMap::new();
+        env.insert("GITHUB_ACTIONS", "true");
+        env.insert("GITHUB_WORKFLOW", "");
+        env.insert("GITHUB_REPOSITORY", "");
+
+        let ci = detect_ci_from_env(env_from_map(&env)).expect("should detect github");
+        assert_eq!(ci.provider, "github");
+        assert!(ci.workflow.is_none(), "empty workflow should be filtered");
+        assert!(ci.repository.is_none(), "empty repo should be filtered");
+    }
+
+    #[test]
+    fn parse_github_event_json_valid() {
+        let json = r#"{
+            "pull_request": {
+                "number": 42,
+                "base": { "ref": "main", "sha": "abc" },
+                "head": { "sha": "def" }
+            }
+        }"#;
+        let event = parse_github_event_json(json);
+        assert_eq!(event.pr_number, Some(42));
+        assert_eq!(event.base_ref.as_deref(), Some("main"));
+    }
+
+    #[test]
+    fn parse_github_event_json_not_pr() {
+        let event = parse_github_event_json(r#"{"ref": "refs/heads/main"}"#);
+        assert!(event.pr_number.is_none());
+    }
+
+    #[test]
+    fn parse_github_event_json_invalid() {
+        let event = parse_github_event_json("not json");
+        assert!(event.pr_number.is_none());
+    }
+}

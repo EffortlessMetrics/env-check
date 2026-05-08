@@ -137,3 +137,23 @@ fn annotations_with_zero_max_are_empty() {
 
     assert!(render_github_annotations(&report, 0).is_empty());
 }
+
+#[test]
+fn annotations_info_severity_renders_as_notice() {
+    let report = receipt(vec![finding(
+        Severity::Info,
+        "env.info_code",
+        "informational message",
+        Some(".tool-versions"),
+        None,
+        None,
+    )]);
+
+    let out = render_github_annotations(&report, 10);
+    assert!(
+        out.starts_with("::notice "),
+        "info findings should render as notice: {}",
+        out
+    );
+    assert!(out.contains("title=env.info_code"));
+}

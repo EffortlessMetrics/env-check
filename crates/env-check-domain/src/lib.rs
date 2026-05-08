@@ -1290,4 +1290,195 @@ mod tests {
         assert!(normalize_version("").is_err());
         assert!(normalize_version("   ").is_err());
     }
+
+    // ==================== RustupToolchain missing (rustup not found) ====================
+
+    #[test]
+    fn rustup_toolchain_missing_emits_toolchain_missing() {
+        let policy = PolicyConfig {
+            profile: Profile::Team,
+            fail_on: FailOn::Error,
+            max_findings: Some(100),
+        };
+        let reqs = vec![Requirement {
+            tool: "rust".to_string(),
+            constraint: Some("stable".to_string()),
+            required: true,
+            source: SourceRef {
+                kind: SourceKind::RustToolchain,
+                path: "rust-toolchain.toml".into(),
+            },
+            probe_kind: ProbeKind::RustupToolchain,
+            hash: None,
+        }];
+        // rustup itself is not present
+        let obs = vec![Observation {
+            tool: "rust".to_string(),
+            present: false,
+            version: None,
+            hash_ok: None,
+            probe: ProbeRecord {
+                cmd: vec![],
+                exit: None,
+                stdout: "".into(),
+                stderr: "".into(),
+            },
+        }];
+        let out = evaluate(&reqs, &obs, &policy, &["rust-toolchain.toml".into()]);
+
+        assert!(
+            out.findings
+                .iter()
+                .any(|f| f.code == codes::ENV_TOOLCHAIN_MISSING
+                    && f.message.contains("rustup not found"))
+        );
+        assert!(
+            out.verdict
+                .reasons
+                .contains(&"toolchain_missing".to_string())
+        );
+    }
+
+    // ==================== severity_for coverage for runtime/wildcard by profile ====================
+
+    #[test]
+    fn runtime_error_severity_oss_is_warn() {
+        let policy = PolicyConfig {
+            profile: Profile::Oss,
+            fail_on: FailOn::Error,
+            max_findings: Some(100),
+        };
+        let reqs = vec![req("node", None)];
+        let obs = vec![Observation {
+            tool: "node".to_string(),
+            present: true,
+            version: None,
+            hash_ok: None,
+            probe: ProbeRecord {
+                cmd: vec!["node".into(), "--version".into()],
+                exit: None,
+                stdout: "".into(),
+                stderr: "crash".into(),
+            },
+        }];
+        let out = evaluate(&reqs, &obs, &policy, &[".tool-versions".into()]);
+        let rt = out
+            .findings
+            .iter()
+            .find(|f| f.code == codes::TOOL_RUNTIME_ERROR)
+            .expect("runtime error finding");
+        assert_eq!(rt.severity, Severity::Warn);
+    }
+
+    #[test]
+    fn runtime_error_severity_strict_is_error() {
+        let policy = PolicyConfig {
+            profile: Profile::Strict,
+            fail_on: FailOn::Error,
+            max_findings: Some(100),
+        };
+        let reqs = vec![req("node", None)];
+        let obs = vec![Observation {
+            tool: "node".to_string(),
+            present: true,
+            version: None,
+            hash_ok: None,
+            probe: ProbeRecord {
+                cmd: vec!["node".into(), "--version".into()],
+                exit: None,
+                stdout: "".into(),
+                stderr: "crash".into(),
+            },
+        }];
+        let out = evaluate(&reqs, &obs, &policy, &[".tool-versions".into()]);
+        let rt = out
+            .findings
+            .iter()
+            .find(|f| f.code == codes::TOOL_RUNTIME_ERROR)
+            .expect("runtime error finding");
+        assert_eq!(rt.severity, Severity::Error);
+    }
+
+    // ==================== reasons for source_parse_error ====================
+
+    #[test]
+    fn reasons_include_source_parse_error() {
+        let policy = PolicyConfig::default();
+        let extra = vec![Finding {
+            severity: Severity::Warn,
+            check_id: None,
+            code: codes::ENV_SOURCE_PARSE_ERROR.into(),
+            message: "bad parse".into(),
+            location: None,
+            help: None,
+            url: None,
+            fingerprint: None,
+            data: None,
+        }];
+        let out = evaluate_with_extras(&[], &[], &policy, &[".tool-versions".into()], &extra);
+        assert!(
+            out.verdict
+                .reasons
+                .contains(&"source_parse_error".to_string())
+        );
+    }
+
+    // ==================== reasons wildcard (unknown code) ====================
+
+    #[test]
+    fn reasons_ignore_unknown_codes() {
+        let policy = PolicyConfig::default();
+        let extra = vec![Finding {
+            severity: Severity::Warn,
+            check_id: None,
+            code: "unknown.custom_code".into(),
+            message: "something".into(),
+            location: None,
+            help: None,
+            url: None,
+            fingerprint: None,
+            data: None,
+        }];
+        let out = evaluate_with_extras(&[], &[], &policy, &[".tool-versions".into()], &extra);
+        // The unknown code should not produce any known reason
+        assert!(out.verdict.reasons.is_empty());
+    }
+
+    // ==================== version observation is None (no version struct) ====================
+
+    #[test]
+    fn present_tool_with_no_version_observation_passes() {
+        let policy = PolicyConfig::default();
+        let reqs = vec![req("node", Some(">=20"))];
+        let obs = vec![Observation {
+            tool: "node".to_string(),
+            present: true,
+            version: None,
+            hash_ok: None,
+            probe: ProbeRecord {
+                cmd: vec!["node".into(), "--version".into()],
+                exit: Some(0),
+                stdout: "".into(),
+                stderr: "".into(),
+            },
+        }];
+        let out = evaluate(&reqs, &obs, &policy, &[".tool-versions".into()]);
+        // No version observation means we can't check, so we just return
+        assert_eq!(out.findings.len(), 0);
+    }
+
+    // ==================== Team profile optional version/hash is warn ====================
+
+    #[test]
+    fn team_optional_version_mismatch_is_warn() {
+        let policy = PolicyConfig {
+            profile: Profile::Team,
+            fail_on: FailOn::Error,
+            max_findings: Some(100),
+        };
+        let reqs = vec![req_optional("node", Some(">=20"))];
+        let obs = vec![obs("node", true, Some("18.0.0"))];
+        let out = evaluate(&reqs, &obs, &policy, &[".tool-versions".into()]);
+        assert_eq!(out.verdict.counts.warn, 1);
+    }
 }
