@@ -1,5 +1,11 @@
 # env-check
 
+[![CI](https://github.com/EffortlessMetrics/env-check/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/EffortlessMetrics/env-check/actions/workflows/ci.yml)
+[![Coverage](https://github.com/EffortlessMetrics/env-check/actions/workflows/coverage.yml/badge.svg?branch=main)](https://github.com/EffortlessMetrics/env-check/actions/workflows/coverage.yml)
+[![Codecov](https://codecov.io/gh/EffortlessMetrics/env-check/branch/main/graph/badge.svg)](https://codecov.io/gh/EffortlessMetrics/env-check)
+[![MSRV](https://img.shields.io/badge/MSRV-1.92-blue.svg)](Cargo.toml)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
+
 Machine-truth sensor for repository tool requirements.
 
 env-check answers:
